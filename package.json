@@ -56,7 +56,17 @@
     "cli",
     "katex",
     "shiki",
-    "notes"
+    "notes",
+    "wikilinks",
+    "flashcards",
+    "mermaid",
+    "knowledge-graph"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/1y33/markviz.git"
+  },
+  "homepage": "https://github.com/1y33/markviz",
+  "bugs": "https://github.com/1y33/markviz/issues"
 }

@@ -10,7 +10,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 function findSkillsDir(): string | null {
-  // After build: dist/cli/index.js -> ../skills
   const candidates = [
     path.resolve(__dirname, "..", "skills"),
     path.resolve(__dirname, "..", "..", "dist", "skills"),
@@ -18,12 +17,44 @@ function findSkillsDir(): string | null {
   ];
   for (const c of candidates) {
     if (fs.existsSync(c) && fs.statSync(c).isDirectory()) {
-      // sanity-check there's at least one markviz-*.md
-      const files = fs.readdirSync(c);
-      if (files.some((f) => f.startsWith("markviz-") && f.endsWith(".md"))) return c;
+      const entries = fs.readdirSync(c);
+      // New format: subfolders containing SKILL.md
+      if (entries.some((e) => {
+        const sub = path.join(c, e);
+        return fs.statSync(sub).isDirectory() && fs.existsSync(path.join(sub, "SKILL.md"));
+      })) return c;
     }
   }
   return null;
+}
+
+function listSkillDirs(skillsRoot: string): string[] {
+  return fs.readdirSync(skillsRoot)
+    .filter((e) => {
+      const sub = path.join(skillsRoot, e);
+      return fs.statSync(sub).isDirectory() && fs.existsSync(path.join(sub, "SKILL.md"));
+    });
+}
+
+function copyRecursive(src: string, dst: string) {
+  if (fs.statSync(src).isDirectory()) {
+    fs.mkdirSync(dst, { recursive: true });
+    for (const f of fs.readdirSync(src)) {
+      copyRecursive(path.join(src, f), path.join(dst, f));
+    }
+  } else {
+    fs.copyFileSync(src, dst);
+  }
+}
+
+function rmrf(p: string) {
+  if (!fs.existsSync(p)) return;
+  if (fs.statSync(p).isDirectory()) {
+    for (const f of fs.readdirSync(p)) rmrf(path.join(p, f));
+    fs.rmdirSync(p);
+  } else {
+    fs.unlinkSync(p);
+  }
 }
 
 const program = new Command();
@@ -211,12 +242,12 @@ skills
       console.error("markviz: skills bundle not found.");
       process.exit(1);
     }
-    const files = fs.readdirSync(src).filter((f) => f.endsWith(".md"));
-    console.log(`\n  markviz skills (${files.length}):\n`);
-    for (const f of files) {
-      const content = fs.readFileSync(path.join(src, f), "utf8");
+    const dirs = listSkillDirs(src);
+    console.log(`\n  markviz skills (${dirs.length}):\n`);
+    for (const d of dirs) {
+      const content = fs.readFileSync(path.join(src, d, "SKILL.md"), "utf8");
       const fm = /^---\n([\s\S]*?)\n---/.exec(content);
-      const name = /^name:\s*(.+)$/m.exec(fm?.[1] ?? "")?.[1] ?? f.replace(/\.md$/, "");
+      const name = /^name:\s*(.+)$/m.exec(fm?.[1] ?? "")?.[1] ?? d;
       const desc = /^description:\s*(.+)$/m.exec(fm?.[1] ?? "")?.[1] ?? "";
       const shortDesc = desc.length > 110 ? desc.slice(0, 110) + "…" : desc;
       console.log(`  ${name}`);
@@ -255,24 +286,25 @@ skills
       process.exit(1);
     }
     fs.mkdirSync(targetDir, { recursive: true });
-    const files = fs.readdirSync(src).filter((f) => f.endsWith(".md"));
+    const dirs = listSkillDirs(src);
     let installed = 0;
     let skipped = 0;
-    for (const f of files) {
-      const dst = path.join(targetDir, f);
-      if (fs.existsSync(dst) && !opts.force) {
-        // Compare — skip if identical
-        const a = fs.readFileSync(path.join(src, f), "utf8");
-        const b = fs.readFileSync(dst, "utf8");
-        if (a === b) {
-          skipped++;
-          continue;
-        }
-        console.log(`  exists, skipping: ${f}  (use --force to overwrite)`);
+    for (const d of dirs) {
+      const srcSkill = path.join(src, d, "SKILL.md");
+      const dstSkillDir = path.join(targetDir, d);
+      const dstSkill = path.join(dstSkillDir, "SKILL.md");
+      if (fs.existsSync(dstSkill) && !opts.force) {
+        const a = fs.readFileSync(srcSkill, "utf8");
+        const b = fs.readFileSync(dstSkill, "utf8");
+        if (a === b) { skipped++; continue; }
+        console.log(`  exists, skipping: ${d}  (use --force to overwrite)`);
         skipped++;
         continue;
       }
-      fs.copyFileSync(path.join(src, f), dst);
+      // Remove old flat-file install if it exists
+      const flatOld = path.join(targetDir, `${d}.md`);
+      if (fs.existsSync(flatOld)) fs.unlinkSync(flatOld);
+      copyRecursive(path.join(src, d), dstSkillDir);
       installed++;
     }
     console.log(`\n  markviz skills installed to: ${targetDir}`);
@@ -306,8 +338,15 @@ skills
     }
     let removed = 0;
     for (const f of fs.readdirSync(targetDir)) {
-      if (f.startsWith("markviz-") && f.endsWith(".md")) {
-        fs.unlinkSync(path.join(targetDir, f));
+      if (!f.startsWith("markviz-")) continue;
+      const p = path.join(targetDir, f);
+      const stat = fs.statSync(p);
+      if (stat.isDirectory() && fs.existsSync(path.join(p, "SKILL.md"))) {
+        rmrf(p);
+        removed++;
+      } else if (stat.isFile() && f.endsWith(".md")) {
+        // Old flat-file install
+        fs.unlinkSync(p);
         removed++;
       }
     }

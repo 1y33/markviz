@@ -1,0 +1,23 @@
+{
+  "showcase": {
+    "title": "markviz",
+    "tagline": "A fast, beautiful markdown viewer",
+    "features": [
+      "themes",
+      "math",
+      "code highlighting",
+      "search",
+      "focus modes",
+      "mark-as-read",
+      "minimap",
+      "zoom",
+      "edit"
+    ],
+    "themes": ["dark", "light", "sepia", "nord", "solarized", "dracula"],
+    "languages_supported": 30,
+    "performance": {
+      "cold_start_ms": 800,
+      "render_time_ms": 40
+    }
+  }
+}

@@ -807,10 +807,49 @@ kbd {
 .swatch-custom {
   background: conic-gradient(#e06c75, #e5c07b, #98c379, #61afef, #c678dd, #e06c75) !important;
 }
+.overlay-swatch {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border-radius: 3px;
+  margin-right: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+}
+.overlay-swatch-off { background: linear-gradient(135deg, transparent 45%, var(--text-muted) 47%, var(--text-muted) 53%, transparent 55%); }
+.overlay-swatch-night { background: #2b1d12; }
+.overlay-swatch-sepia { background: #c4a574; }
+.overlay-swatch-dim { background: #555; }
+.overlay-swatch-high-contrast { background: linear-gradient(90deg, #000 50%, #fff 50%); }
 .dropdown-divider {
   height: 1px;
   background: var(--border);
   margin: 4px 0;
+}
+
+/* === Reading overlays — applied to content + sidebar, not the topbar so
+   the controls stay legible. Pure CSS filters, so they work uniformly across
+   markdown view, code, mermaid, AND PDF canvases. */
+html[data-overlay="night"] .content,
+html[data-overlay="night"] .sidebar,
+html[data-overlay="night"] .pane-header {
+  filter: brightness(.78) sepia(.35) hue-rotate(-12deg);
+}
+html[data-overlay="sepia"] .content,
+html[data-overlay="sepia"] .sidebar,
+html[data-overlay="sepia"] .pane-header {
+  filter: sepia(.45) saturate(.85) brightness(.96);
+}
+html[data-overlay="dim"] .content,
+html[data-overlay="dim"] .sidebar,
+html[data-overlay="dim"] .pane-header {
+  filter: brightness(.7);
+}
+html[data-overlay="high-contrast"] .content {
+  filter: contrast(1.18) saturate(1.1);
+}
+/* Smooth crossfades between overlays. */
+.content, .sidebar, .pane-header {
+  transition: filter 220ms ease;
 }
 
 /* === Content === */
@@ -1555,6 +1594,68 @@ html[data-theme="sepia"] .md-content {
   text-overflow: ellipsis;
   max-width: 50%;
 }
+.pdf-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.pdf-outline {
+  flex: 0 0 240px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elev);
+  overflow-y: auto;
+  padding: 10px 8px 24px;
+}
+.pdf-outline-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--text-muted);
+  padding: 6px 8px;
+}
+.pdf-outline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pdf-outline-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 8px;
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  transition: background 120ms, color 120ms;
+}
+.pdf-outline-row:hover { background: var(--bg-elev2); color: var(--text); }
+.pdf-outline-row.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.pdf-outline-row.is-disabled {
+  opacity: .6;
+  cursor: default;
+}
+.pdf-outline-title-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdf-outline-page {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
 .pdf-scroll {
   flex: 1 1 auto;
   overflow: auto;
@@ -1563,10 +1664,6 @@ html[data-theme="sepia"] .md-content {
   flex-direction: column;
   align-items: center;
   gap: 18px;
-  background:
-    linear-gradient(var(--bg-elev2), var(--bg-elev2)) center / 100% 100% no-repeat,
-    var(--bg);
-  /* subtle "paper rail" feel */
   background: var(--bg-elev);
 }
 .pdf-pages {

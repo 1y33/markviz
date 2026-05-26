@@ -14,6 +14,8 @@ import {
   IconZoomOut,
   IconRefresh,
   IconFileText,
+  IconCaretRight,
+  IconCaretDown,
 } from "./icons";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -51,6 +53,10 @@ export function PdfView({
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const pendingInitialJump = useRef<number | null>(initialPage ?? null);
 
+  type OutlineNode = { title: string; page: number | null; children: OutlineNode[] };
+  const [outline, setOutline] = useState<OutlineNode[] | null>(null);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     setDoc(null);
@@ -77,6 +83,61 @@ export function PdfView({
       task.destroy();
     };
   }, [src, initialPage]);
+
+  // Fetch the PDF outline (chapters) and resolve each entry to a page number.
+  useEffect(() => {
+    if (!doc) {
+      setOutline(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      // pdf.js types: getOutline() returns Array<{ title, dest, items, ... }> | null.
+      // `dest` can be a string (named destination) or an array; either way we
+      // can resolve it to an explicit dest, then to a page index.
+      const resolveOne = async (entry: {
+        title: string;
+        dest?: string | unknown[] | null;
+        items?: unknown[];
+      }): Promise<OutlineNode> => {
+        let page: number | null = null;
+        try {
+          let dest = entry.dest as unknown as string | unknown[] | null;
+          if (typeof dest === "string") {
+            dest = await doc.getDestination(dest);
+          }
+          if (Array.isArray(dest) && dest[0]) {
+            const ref = dest[0] as { num: number; gen: number };
+            const idx = await doc.getPageIndex(ref);
+            page = idx + 1;
+          }
+        } catch {
+          page = null;
+        }
+        const children = await Promise.all(
+          ((entry.items as Array<{ title: string; dest?: unknown; items?: unknown[] }>) ?? []).map(resolveOne),
+        );
+        return { title: entry.title, page, children };
+      };
+      try {
+        const raw = await doc.getOutline();
+        if (cancelled) return;
+        if (!raw || raw.length === 0) {
+          setOutline([]);
+          return;
+        }
+        const tree = await Promise.all(raw.map(resolveOne));
+        if (cancelled) return;
+        setOutline(tree);
+        // If there's a meaningful outline (more than one chapter), open the
+        // panel by default so users discover it.
+        setOutlineOpen(tree.length >= 2);
+      } catch {
+        if (!cancelled) setOutline([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [doc]);
 
   // Render each page: canvas image + selectable text layer overlay.
   useEffect(() => {
@@ -202,9 +263,22 @@ export function PdfView({
     siblingNoteState === "exists" ? "Open notes" :
     siblingNoteState === "missing" ? "Create notes" : "Notes";
 
+  const hasOutline = outline && outline.length > 0;
+
   return (
-    <div className={`pdf-view pdf-theme-${theme}`}>
+    <div className={`pdf-view pdf-theme-${theme} ${outlineOpen && hasOutline ? "has-outline" : ""}`}>
       <div className="pdf-toolbar">
+        {hasOutline && (
+          <button
+            className={`iconbtn ${outlineOpen ? "is-active" : ""}`}
+            onClick={() => setOutlineOpen((v) => !v)}
+            title={outlineOpen ? "Hide chapters" : "Show chapters"}
+          >
+            {outlineOpen ? <IconCaretDown size={14} /> : <IconCaretRight size={14} />}
+            <span className="btn-label">Chapters</span>
+          </button>
+        )}
+
         <div className="pdf-toolbar-group">
           <button
             className="iconbtn"
@@ -270,7 +344,14 @@ export function PdfView({
         </div>
       </div>
 
-      <div className="pdf-scroll" ref={containerRef}>
+      <div className="pdf-body">
+        {outlineOpen && hasOutline && (
+          <aside className="pdf-outline">
+            <div className="pdf-outline-title">Chapters</div>
+            <OutlineTree nodes={outline!} depth={0} activePage={activePage} onJump={scrollToPage} />
+          </aside>
+        )}
+        <div className="pdf-scroll" ref={containerRef}>
         {loadError && <div className="error">Failed to load PDF: {loadError}</div>}
         {!doc && !loadError && <div className="loading">Loading PDF…</div>}
         {doc && (
@@ -292,7 +373,36 @@ export function PdfView({
             ))}
           </div>
         )}
+        </div>
       </div>
     </div>
+  );
+}
+
+interface OutlineNode { title: string; page: number | null; children: OutlineNode[] }
+
+function OutlineTree({ nodes, depth, activePage, onJump }: { nodes: OutlineNode[]; depth: number; activePage: number; onJump: (p: number) => void }) {
+  return (
+    <ul className="pdf-outline-list" style={{ paddingLeft: depth === 0 ? 0 : 14 }}>
+      {nodes.map((n, i) => {
+        const isActive = n.page !== null && n.page === activePage;
+        return (
+          <li key={i}>
+            <button
+              className={`pdf-outline-row ${isActive ? "is-active" : ""} ${n.page === null ? "is-disabled" : ""}`}
+              onClick={() => n.page !== null && onJump(n.page)}
+              disabled={n.page === null}
+              title={n.title}
+            >
+              <span className="pdf-outline-title-text">{n.title}</span>
+              {n.page !== null && <span className="pdf-outline-page">p. {n.page}</span>}
+            </button>
+            {n.children.length > 0 && (
+              <OutlineTree nodes={n.children} depth={depth + 1} activePage={activePage} onJump={onJump} />
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

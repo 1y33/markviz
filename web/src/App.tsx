@@ -16,7 +16,7 @@ import { ThemeStudio } from "./ThemeStudio";
 import { Pane } from "./Pane";
 import { IconEdit, IconEye } from "./icons";
 import { setStoragePrefix, lsGet, lsSet } from "./storage";
-import type { BuiltinTheme, FileKind, FocusMode, RootInfo, SavedTheme, Theme, ThemeCustomization, TreeNode } from "./types";
+import type { BuiltinTheme, FileKind, FocusMode, ReadingOverlay, RootInfo, SavedTheme, Theme, ThemeCustomization, TreeNode } from "./types";
 
 const BUILTIN_THEMES: BuiltinTheme[] = [
   "dark", "light", "github-light", "sepia", "solarized",
@@ -139,6 +139,8 @@ export function App() {
   const [minimapOpen, setMinimapOpen] = useState<boolean>(() => lsGet<boolean>("minimapOpen", true));
   const [minimapWidth, setMinimapWidth] = useState<number>(() => lsGet<number>("minimapWidth", 150));
   const [zoom, setZoom] = useState<number>(() => lsGet<number>("zoom", 1));
+  const [overlay, setOverlay] = useState<ReadingOverlay>(() => lsGet<ReadingOverlay>("overlay", "off"));
+  useEffect(() => { if (info) lsSet("overlay", overlay); }, [overlay, info]);
   const [editing, setEditing] = useState(false);
   const [readSet, setReadSet] = useState<Set<string>>(new Set());
   const [showHelp, setShowHelp] = useState(false);
@@ -283,7 +285,9 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme.base;
     document.documentElement.dataset.focus = focus;
-  }, [resolvedTheme.base, focus]);
+    if (overlay && overlay !== "off") document.documentElement.dataset.overlay = overlay;
+    else delete document.documentElement.dataset.overlay;
+  }, [resolvedTheme.base, focus, overlay]);
 
   // Persist customizations + saved themes.
   useEffect(() => { if (info) lsSet("themeCustom", themeCustom); }, [themeCustom, info]);
@@ -863,6 +867,8 @@ A:
               setTheme(saved?.base ?? "dark");
             }
           }}
+          overlay={overlay}
+          onSetOverlay={setOverlay}
           splitOpen={splitOpen}
           onToggleSplit={() => {
             setSplitOpen((s) => {

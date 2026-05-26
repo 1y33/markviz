@@ -20,8 +20,9 @@ import {
   IconDownload,
   IconSplit,
   IconSwap,
+  IconReadingMode,
 } from "./icons";
-import type { FocusMode, SavedTheme, Theme } from "./types";
+import type { FocusMode, ReadingOverlay, SavedTheme, Theme } from "./types";
 
 interface Props {
   sidebarOpen: boolean;
@@ -56,6 +57,8 @@ interface Props {
   splitOpen: boolean;
   onToggleSplit: () => void;
   onSwapPanes: () => void;
+  overlay: ReadingOverlay;
+  onSetOverlay: (o: ReadingOverlay) => void;
 }
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -113,10 +116,21 @@ function useHoldRepeat(action: () => void, delay = 350, interval = 60) {
   };
 }
 
+const OVERLAYS: { value: ReadingOverlay; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "night", label: "Night (warm)" },
+  { value: "sepia", label: "Sepia tint" },
+  { value: "dim", label: "Dim" },
+  { value: "high-contrast", label: "High contrast" },
+];
+
 export function Topbar(props: Props) {
   const [themeOpen, setThemeOpen] = useState(false);
   const themeRef = useRef<HTMLDivElement>(null);
   useOutsideClick(themeRef, () => setThemeOpen(false));
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useOutsideClick(overlayRef, () => setOverlayOpen(false));
 
   const zoomInHold = useHoldRepeat(props.onZoomIn);
   const zoomOutHold = useHoldRepeat(props.onZoomOut);
@@ -332,6 +346,39 @@ export function Topbar(props: Props) {
               <span className="theme-swatch swatch-custom" />
               <span>Customize…</span>
             </button>
+          </div>
+        )}
+      </div>
+
+      <div className="dropdown" ref={overlayRef}>
+        <button
+          className={`iconbtn ${props.overlay !== "off" ? "is-active" : ""}`}
+          onClick={() => setOverlayOpen((v) => !v)}
+          title="Reading overlay (night / sepia / dim)"
+          aria-haspopup="menu"
+          aria-expanded={overlayOpen}
+        >
+          <IconReadingMode size={15} />
+          <span className="btn-label">{OVERLAYS.find((o) => o.value === props.overlay)?.label}</span>
+          <IconChevronDown size={12} />
+        </button>
+        {overlayOpen && (
+          <div className="dropdown-menu" role="menu">
+            {OVERLAYS.map((o) => (
+              <button
+                key={o.value}
+                role="menuitemradio"
+                aria-checked={props.overlay === o.value}
+                className={`dropdown-item ${props.overlay === o.value ? "is-selected" : ""}`}
+                onClick={() => {
+                  props.onSetOverlay(o.value);
+                  setOverlayOpen(false);
+                }}
+              >
+                <span className={`overlay-swatch overlay-swatch-${o.value}`} />
+                <span>{o.label}</span>
+              </button>
+            ))}
           </div>
         )}
       </div>

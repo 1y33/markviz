@@ -60,3 +60,5 @@ export interface ThemeCustomization {
 }
 
 export type FocusMode = "normal" | "focus" | "zen";
+
+export type ReadingOverlay = "off" | "night" | "sepia" | "dim" | "high-contrast";

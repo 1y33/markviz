@@ -177,6 +177,12 @@ export const IconPrint = (p: IconProps) => (
     <rect x="6" y="14" width="12" height="8" />
   </Icon>
 );
+export const IconReadingMode = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+    <path d="M16 5l.5 1.5L18 7l-1.5.5L16 9l-.5-1.5L14 7l1.5-.5z" />
+  </Icon>
+);
 export const IconSplit = (p: IconProps) => (
   <Icon {...p}>
     <rect x="3" y="4" width="8" height="16" rx="1" />

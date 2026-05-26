@@ -646,9 +646,92 @@ export async function startServer(opts: ServerOptions): Promise<{ url: string; c
       return { error: "only markdown and text files can be edited" };
     }
     try {
+      // Ensure parent dir exists so users can create files in new folders by
+      // typing "subfolder/name.md".
+      await fs.mkdir(path.dirname(abs), { recursive: true });
       await fs.writeFile(abs, content, "utf8");
       const stat = await fs.stat(abs);
       return { ok: true, mtime: stat.mtimeMs, size: stat.size };
+    } catch (err: unknown) {
+      reply.code(500);
+      return { error: (err as Error).message };
+    }
+  });
+
+  // === File-management endpoints (delete, rename, mkdir, duplicate) ===
+  // All operations operate on paths relative to the current root and reject
+  // anything outside it via safeResolve. The watcher then re-emits tree-change
+  // so the client refreshes.
+  app.delete<{ Querystring: { path?: string } }>("/api/file", async (req, reply) => {
+    const rel = req.query.path;
+    if (!rel) { reply.code(400); return { error: "missing path" }; }
+    const abs = safeResolve(root, rel);
+    if (!abs) { reply.code(403); return { error: "path outside root" }; }
+    try {
+      const st = await fs.stat(abs);
+      if (st.isDirectory()) {
+        await fs.rm(abs, { recursive: true, force: true });
+      } else {
+        await fs.unlink(abs);
+      }
+      return { ok: true };
+    } catch (err: unknown) {
+      reply.code(404);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post<{ Body: { from?: string; to?: string } }>("/api/file/rename", async (req, reply) => {
+    const { from, to } = req.body ?? {};
+    if (!from || !to) { reply.code(400); return { error: "missing from/to" }; }
+    const a = safeResolve(root, from);
+    const b = safeResolve(root, to);
+    if (!a || !b) { reply.code(403); return { error: "path outside root" }; }
+    try {
+      // Prevent silent overwrites.
+      try {
+        await fs.access(b);
+        reply.code(409);
+        return { error: "destination already exists" };
+      } catch { /* not exists → ok */ }
+      await fs.mkdir(path.dirname(b), { recursive: true });
+      await fs.rename(a, b);
+      return { ok: true, path: path.relative(root, b) };
+    } catch (err: unknown) {
+      reply.code(500);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post<{ Body: { path?: string } }>("/api/dir", async (req, reply) => {
+    const rel = req.body?.path;
+    if (!rel) { reply.code(400); return { error: "missing path" }; }
+    const abs = safeResolve(root, rel);
+    if (!abs) { reply.code(403); return { error: "path outside root" }; }
+    try {
+      await fs.mkdir(abs, { recursive: true });
+      return { ok: true, path: path.relative(root, abs) };
+    } catch (err: unknown) {
+      reply.code(500);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post<{ Body: { from?: string; to?: string } }>("/api/file/duplicate", async (req, reply) => {
+    const { from, to } = req.body ?? {};
+    if (!from || !to) { reply.code(400); return { error: "missing from/to" }; }
+    const a = safeResolve(root, from);
+    const b = safeResolve(root, to);
+    if (!a || !b) { reply.code(403); return { error: "path outside root" }; }
+    try {
+      try {
+        await fs.access(b);
+        reply.code(409);
+        return { error: "destination already exists" };
+      } catch { /* not exists → ok */ }
+      await fs.mkdir(path.dirname(b), { recursive: true });
+      await fs.cp(a, b, { recursive: true });
+      return { ok: true, path: path.relative(root, b) };
     } catch (err: unknown) {
       reply.code(500);
       return { error: (err as Error).message };

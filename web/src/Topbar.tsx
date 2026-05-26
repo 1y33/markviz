@@ -23,6 +23,7 @@ import {
   IconReadingMode,
   IconBookmarks,
   IconCalendar,
+  IconSettings,
 } from "./icons";
 import type { FocusMode, ReadingOverlay, SavedTheme, Theme } from "./types";
 
@@ -63,6 +64,7 @@ interface Props {
   onSetOverlay: (o: ReadingOverlay) => void;
   onOpenSessions: () => void;
   onOpenDaily: () => void;
+  onOpenSettings: () => void;
 }
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -187,7 +189,7 @@ export function Topbar(props: Props) {
         onClick={props.onOpenFolder}
         title="Open another folder (o)"
       >
-        <IconFolderOpen size={14} />
+        <IconFolderOpen size={15} />
         <span className="btn-label">{props.rootName}</span>
         <IconChevronDown size={11} />
       </button>
@@ -415,6 +417,10 @@ export function Topbar(props: Props) {
 
       <button className="iconbtn ghost" onClick={props.onPrint} title="Print / save as PDF (Ctrl+Shift+P)">
         <IconPrint size={15} />
+      </button>
+
+      <button className="iconbtn ghost" onClick={props.onOpenSettings} title="Settings (,)">
+        <IconSettings size={15} />
       </button>
 
       <button className="iconbtn ghost" onClick={props.onHelp} title="Keyboard shortcuts (?)">

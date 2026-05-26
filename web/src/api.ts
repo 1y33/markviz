@@ -82,10 +82,21 @@ export interface SavedSession {
   splitOpen: boolean;
   splitRatio: number;
   activePane: "left" | "right";
+  leftPdfPage?: number | null;
+  rightPdfPage?: number | null;
+  // Per-pane tab lists. Optional for backward compatibility with older
+  // session files that pre-date the tab bar.
+  leftTabs?: string[];
+  rightTabs?: string[];
   savedAt: number;
 }
 
-export interface SessionsFile { sessions: Record<string, SavedSession> }
+export interface SessionsFile {
+  sessions: Record<string, SavedSession>;
+  // The name of the session that was most recently loaded / saved. Used to
+  // optionally auto-restore at boot.
+  lastUsed?: string | null;
+}
 
 export async function fetchSessions(): Promise<SessionsFile> {
   return jsonFetch<SessionsFile>("/api/sessions");
@@ -95,6 +106,34 @@ export async function saveSessions(data: SessionsFile): Promise<{ ok: boolean }>
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
+  });
+}
+
+export async function deleteFile(filePath: string): Promise<{ ok: true }> {
+  return jsonFetch<{ ok: true }>(`/api/file?path=${encodeURIComponent(filePath)}`, { method: "DELETE" });
+}
+
+export async function renameFile(from: string, to: string): Promise<{ ok: true; path: string }> {
+  return jsonFetch<{ ok: true; path: string }>(`/api/file/rename`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to }),
+  });
+}
+
+export async function duplicateFile(from: string, to: string): Promise<{ ok: true; path: string }> {
+  return jsonFetch<{ ok: true; path: string }>(`/api/file/duplicate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to }),
+  });
+}
+
+export async function makeDir(dirPath: string): Promise<{ ok: true; path: string }> {
+  return jsonFetch<{ ok: true; path: string }>(`/api/dir`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: dirPath }),
   });
 }
 

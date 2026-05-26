@@ -2,15 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { FileView } from "./FileView";
 import { Editor } from "./Editor";
 import { FlashcardsBadge } from "./Flashcards";
+import { TabBar } from "./TabBar";
 import { fetchFile, saveFile } from "./api";
 import type { FileKind } from "./types";
-import {
-  IconClose,
-  IconChevronLeft,
-  IconChevronRight,
-  IconEdit,
-  IconEye,
-} from "./icons";
 
 export interface PaneSnapshot {
   path: string | null;
@@ -20,17 +14,22 @@ export interface PaneSnapshot {
 interface Props {
   side: "left" | "right";
   active: boolean;
-  path: string | null;
+  // Tab strip: the list of files open in this pane.
+  tabs: string[];
+  activeTab: string | null;
+  onActivateTab: (path: string) => void;
+  onCloseTab: (path: string) => void;
+  onReorderTabs: (from: number, to: number) => void;
+  // PDF state.
   pdfInitialPage?: number | null;
   theme: "dark" | "light";
   zoom: number;
   wikiResolver?: (target: string) => string | null;
   wikiFiles?: string[];
-  // Lifecycle hooks back to App.
+  // Lifecycle.
   onFocus: () => void;
-  onPathChange: (path: string | null) => void;
-  onClose?: () => void;
-  // Used to derive sibling-note state from the global file index.
+  onClosePane?: () => void;
+  // PDF/note sibling.
   resolveSiblingNote: (pdfPath: string) => { path: string; exists: boolean } | null;
   onOpenSibling: (siblingPath: string, exists: boolean, fromPdfPath: string) => void;
   showFlashcards: () => void;
@@ -40,20 +39,24 @@ interface Props {
 export function Pane({
   side,
   active,
-  path,
+  tabs,
+  activeTab,
+  onActivateTab,
+  onCloseTab,
+  onReorderTabs,
   pdfInitialPage,
   theme,
   zoom,
   wikiResolver,
   wikiFiles,
   onFocus,
-  onPathChange,
-  onClose,
+  onClosePane,
   resolveSiblingNote,
   onOpenSibling,
   showFlashcards,
   reloadTreeAfterSave,
 }: Props) {
+  const path = activeTab;
   const [content, setContent] = useState<string | null>("");
   const [kind, setKind] = useState<FileKind>("markdown");
   const [url, setUrl] = useState<string | undefined>(undefined);
@@ -82,9 +85,7 @@ export function Pane({
       .finally(() => setLoading(false));
   }, [path]);
 
-  const canEdit = !!path && (kind === "markdown" || kind === "text");
   const sibling = path && kind === "pdf" ? resolveSiblingNote(path) : null;
-  const filename = path ? path.split("/").pop() : null;
 
   const onSave = async (newContent: string) => {
     if (!path) return;
@@ -101,39 +102,15 @@ export function Pane({
       onMouseDown={onFocus}
       onFocus={onFocus}
     >
-      <div className="pane-header">
-        <div className="pane-label" title={path ?? ""}>
-          {path ? (
-            <>
-              <span className="pane-side-tag">{side === "left" ? "L" : "R"}</span>
-              <span className="pane-filename">{filename}</span>
-            </>
-          ) : (
-            <span className="pane-empty-label">Empty pane</span>
-          )}
-        </div>
-        <div className="pane-header-actions">
-          {canEdit && (
-            <button
-              className={`iconbtn ghost ${editing ? "is-active" : ""}`}
-              onClick={() => setEditing((e) => !e)}
-              title={editing ? "View" : "Edit"}
-            >
-              {editing ? <IconEye size={13} /> : <IconEdit size={13} />}
-            </button>
-          )}
-          {onClose && (
-            <button
-              className="iconbtn ghost"
-              onClick={onClose}
-              title="Close this pane"
-              aria-label="Close pane"
-            >
-              <IconClose size={13} />
-            </button>
-          )}
-        </div>
-      </div>
+      <TabBar
+        side={side}
+        tabs={tabs}
+        activeTab={activeTab}
+        onActivate={onActivateTab}
+        onClose={onCloseTab}
+        onReorder={onReorderTabs}
+        onClosePane={onClosePane}
+      />
       <div className="pane-body">
         {error && <div className="error">{error}</div>}
         {loading && <div className="loading">Loading…</div>}
@@ -189,6 +166,3 @@ export function Pane({
     </section>
   );
 }
-
-// Tiny icon re-exports so consumers can match the look used here.
-export const PaneIcons = { IconChevronLeft, IconChevronRight };

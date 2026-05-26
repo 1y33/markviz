@@ -25,6 +25,21 @@ interface Props {
   onSelect: (path: string) => void;
   onOpenInRightPane?: (path: string) => void;
   onToggleRead: (path: string) => void;
+  onContextMenu?: (node: TreeNode, x: number, y: number) => void;
+}
+
+interface TreeViewProps {
+  nodes: TreeNode[];
+  depth: number;
+  currentPath: string | null;
+  rightPath?: string | null;
+  readPaths: Set<string>;
+  expanded: Set<string>;
+  onToggleExpand: (p: string) => void;
+  onSelect: (p: string) => void;
+  onOpenInRightPane?: (p: string) => void;
+  onToggleRead: (p: string) => void;
+  onContextMenu?: (node: TreeNode, x: number, y: number) => void;
 }
 
 function flatten(nodes: TreeNode[], out: TreeNode[] = []): TreeNode[] {
@@ -83,18 +98,8 @@ function TreeView({
   onSelect,
   onOpenInRightPane,
   onToggleRead,
-}: {
-  nodes: TreeNode[];
-  depth: number;
-  currentPath: string | null;
-  rightPath?: string | null;
-  readPaths: Set<string>;
-  expanded: Set<string>;
-  onToggleExpand: (p: string) => void;
-  onSelect: (p: string) => void;
-  onOpenInRightPane?: (p: string) => void;
-  onToggleRead: (p: string) => void;
-}) {
+  onContextMenu,
+}: TreeViewProps) {
   return (
     <ul className="tree" role="tree">
       {nodes.map((n) => {
@@ -116,7 +121,12 @@ function TreeView({
                   else onSelect(n.path);
                 }
               }}
-              title={n.type === "file" ? `${n.path}\n(alt-click → open in right pane)` : n.path}
+              onContextMenu={(e) => {
+                if (!onContextMenu) return;
+                e.preventDefault();
+                onContextMenu(n, e.clientX, e.clientY);
+              }}
+              title={n.type === "file" ? `${n.path}\n(alt-click → open in right pane · right-click → menu)` : n.path}
             >
               <span className="caret">
                 {n.type === "dir" ? (isOpen ? <IconCaretDown size={12} /> : <IconCaretRight size={12} />) : null}
@@ -170,6 +180,7 @@ function TreeView({
                 onSelect={onSelect}
                 onOpenInRightPane={onOpenInRightPane}
                 onToggleRead={onToggleRead}
+                onContextMenu={onContextMenu}
               />
             )}
           </li>
@@ -180,7 +191,7 @@ function TreeView({
 }
 
 export function Sidebar(props: Props) {
-  const { tree, rootName, currentPath, rightPath, readPaths, onSelect, onOpenInRightPane, onToggleRead } = props;
+  const { tree, rootName, currentPath, rightPath, readPaths, onSelect, onOpenInRightPane, onToggleRead, onContextMenu } = props;
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
@@ -287,6 +298,7 @@ export function Sidebar(props: Props) {
             onSelect={onSelect}
             onOpenInRightPane={onOpenInRightPane}
             onToggleRead={onToggleRead}
+            onContextMenu={onContextMenu}
           />
         )}
       </div>

@@ -4,7 +4,7 @@ import { Topbar } from "./Topbar";
 import { Minimap } from "./Minimap";
 import { FileView } from "./FileView";
 import { Editor } from "./Editor";
-import { fetchInfo, fetchTree, fetchFile, saveFile, connect, disconnect, heartbeat, fetchIndex, type FileIndex } from "./api";
+import { fetchInfo, fetchTree, fetchFile, saveFile, connect, disconnect, heartbeat, fetchIndex, fetchSessions, type FileIndex } from "./api";
 import { FolderPicker } from "./FolderPicker";
 import { BacklinksPane } from "./BacklinksPane";
 import { GraphView } from "./GraphView";
@@ -14,57 +14,27 @@ import { CommandPalette } from "./CommandPalette";
 import { ArxivImport } from "./ArxivImport";
 import { ThemeStudio } from "./ThemeStudio";
 import { Pane } from "./Pane";
+import { TabBar } from "./TabBar";
 import { SessionsPanel } from "./SessionsPanel";
 import { DailyNotePrompt, DailyTemplateEditor, todayDailyPath } from "./Daily";
+import { NewNotePrompt } from "./NewNotePrompt";
+import { ContextMenu, type ContextAction } from "./ContextMenu";
+import { FsPrompt } from "./FsPrompt";
+import { Settings } from "./Settings";
+import { deleteFile, renameFile, duplicateFile, makeDir } from "./api";
 import { IconEdit, IconEye } from "./icons";
 import { setStoragePrefix, lsGet, lsSet } from "./storage";
-import type { BuiltinTheme, FileKind, FocusMode, ReadingOverlay, RootInfo, SavedTheme, Theme, ThemeCustomization, TreeNode } from "./types";
-
-const BUILTIN_THEMES: BuiltinTheme[] = [
-  "dark", "light", "github-light", "sepia", "solarized",
-  "nord", "dracula", "gruvbox-dark", "tokyo-night", "catppuccin-mocha", "rose-pine",
-];
-
-function isBuiltinTheme(t: string): t is BuiltinTheme {
-  return (BUILTIN_THEMES as string[]).includes(t);
-}
-
-function getInitialFileFromUrl(): string | null {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("file");
-}
-
-function getInitialPageFromUrl(): number | null {
-  const v = new URLSearchParams(window.location.search).get("page");
-  if (!v) return null;
-  const n = Number(v);
-  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null;
-}
-
-function getInitialFocusFromUrl(): FocusMode | null {
-  const params = new URLSearchParams(window.location.search);
-  const v = params.get("focus");
-  return v === "normal" || v === "focus" || v === "zen" ? v : null;
-}
-
-function getEditFromUrl(): boolean {
-  return new URLSearchParams(window.location.search).get("edit") === "1";
-}
-
-function setUrlFile(path: string | null) {
-  const url = new URL(window.location.href);
-  if (path) url.searchParams.set("file", path);
-  else url.searchParams.delete("file");
-  url.searchParams.delete("page");
-  window.history.replaceState({}, "", url);
-}
-
-function setUrlPage(page: number | null) {
-  const url = new URL(window.location.href);
-  if (page && page > 1) url.searchParams.set("page", String(page));
-  else url.searchParams.delete("page");
-  window.history.replaceState({}, "", url);
-}
+import type { FileKind, FocusMode, ReadingOverlay, RootInfo, SavedTheme, Theme, ThemeCustomization, TreeNode } from "./types";
+import { isBuiltinTheme, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_MINIMAP_WIDTH, MAX_MINIMAP_WIDTH } from "./constants";
+import {
+  getInitialFileFromUrl,
+  getInitialPageFromUrl,
+  getInitialFocusFromUrl,
+  getEditFromUrl,
+  setUrlFile,
+  setUrlPage,
+} from "./urlSync";
+import { hexToRgba, lightenHex } from "./colorUtils";
 
 function findFirstMarkdown(nodes: TreeNode[]): string | null {
   for (const n of nodes) {
@@ -84,28 +54,6 @@ function findFirstMarkdown(nodes: TreeNode[]): string | null {
   return null;
 }
 
-function hexToRgb(hex: string): [number, number, number] | null {
-  const m = /^#?([a-f0-9]{3}|[a-f0-9]{6})$/i.exec(hex.trim());
-  if (!m) return null;
-  let h = m[1];
-  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-  const n = parseInt(h, 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-function hexToRgba(hex: string, a: number): string {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
-}
-
-function lightenHex(hex: string, amt: number): string {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-  const [r, g, b] = rgb.map((c) => Math.round(c + (255 - c) * amt)) as [number, number, number];
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
 function resolveRelativeHref(from: string | null, href: string): string {
   if (!from) return href.replace(/^\.\//, "");
   const dir = from.includes("/") ? from.slice(0, from.lastIndexOf("/")) : "";
@@ -119,10 +67,6 @@ function resolveRelativeHref(from: string | null, href: string): string {
   return stack.join("/");
 }
 
-const MIN_SIDEBAR_WIDTH = 180;
-const MAX_SIDEBAR_WIDTH = 600;
-const MIN_MINIMAP_WIDTH = 80;
-const MAX_MINIMAP_WIDTH = 220;
 
 export function App() {
   const [info, setInfo] = useState<RootInfo | null>(null);
@@ -164,6 +108,19 @@ export function App() {
   const [showSessions, setShowSessions] = useState(false);
   const [showDailyPrompt, setShowDailyPrompt] = useState(false);
   const [showDailyTemplateEditor, setShowDailyTemplateEditor] = useState(false);
+  const [showNewNote, setShowNewNote] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  // Context menu state — { node, x, y } when open, null otherwise.
+  const [ctxMenu, setCtxMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
+  // FsPrompt state — single-input dialogs for rename / duplicate / mkdir.
+  const [fsPrompt, setFsPrompt] = useState<null | {
+    title: string;
+    hint?: string;
+    initial: string;
+    confirmLabel: string;
+    danger?: boolean;
+    onConfirm: (value: string) => Promise<void>;
+  }>(null);
   const [themeCustom, setThemeCustom] = useState<Record<string, ThemeCustomization>>(
     () => lsGet<Record<string, ThemeCustomization>>("themeCustom", {}),
   );
@@ -178,9 +135,67 @@ export function App() {
   const [rightPdfInitialPage, setRightPdfInitialPage] = useState<number | null>(null);
   const [activePane, setActivePane] = useState<"left" | "right">("left");
 
+  // === Tabs per pane ===
+  // Each pane keeps an ordered list of currently-open files; the active tab
+  // for the left pane is `currentPath`, and the active tab for the right pane
+  // is `rightPath`. Tabs persist per-root and survive reloads.
+  const [leftTabs, setLeftTabs] = useState<string[]>(() => lsGet<string[]>("leftTabs", []));
+  const [rightTabs, setRightTabs] = useState<string[]>(() => lsGet<string[]>("rightTabs", []));
+
   useEffect(() => { if (info) lsSet("splitOpen", splitOpen); }, [splitOpen, info]);
   useEffect(() => { if (info) lsSet("splitRatio", splitRatio); }, [splitRatio, info]);
   useEffect(() => { if (info) lsSet("rightPath", rightPath); }, [rightPath, info]);
+  useEffect(() => { if (info) lsSet("leftTabs", leftTabs); }, [leftTabs, info]);
+  useEffect(() => { if (info) lsSet("rightTabs", rightTabs); }, [rightTabs, info]);
+
+  // Whenever the active path of a pane changes to a real file, make sure it
+  // is in that pane's tab list. This lets every existing `setCurrentPath` /
+  // `setRightPath` call automatically participate in the tab system — no
+  // need to refactor 30 call sites.
+  useEffect(() => {
+    if (!currentPath) return;
+    setLeftTabs((tabs) => (tabs.includes(currentPath) ? tabs : [...tabs, currentPath]));
+  }, [currentPath]);
+  useEffect(() => {
+    if (!rightPath) return;
+    setRightTabs((tabs) => (tabs.includes(rightPath) ? tabs : [...tabs, rightPath]));
+  }, [rightPath]);
+
+  const closeLeftTab = useCallback((p: string) => {
+    setLeftTabs((tabs) => {
+      const idx = tabs.indexOf(p);
+      const next = tabs.filter((t) => t !== p);
+      if (currentPath === p) {
+        // Pick the nearest remaining tab — prefer the one to the right,
+        // fall back to the one before.
+        const replacement = next[idx] ?? next[idx - 1] ?? null;
+        setCurrentPath(replacement);
+      }
+      return next;
+    });
+  }, [currentPath]);
+
+  const closeRightTab = useCallback((p: string) => {
+    setRightTabs((tabs) => {
+      const idx = tabs.indexOf(p);
+      const next = tabs.filter((t) => t !== p);
+      if (rightPath === p) {
+        const replacement = next[idx] ?? next[idx - 1] ?? null;
+        setRightPath(replacement);
+      }
+      return next;
+    });
+  }, [rightPath]);
+
+  const reorderTabs = useCallback((side: "left" | "right", from: number, to: number) => {
+    const setter = side === "left" ? setLeftTabs : setRightTabs;
+    setter((tabs) => {
+      const next = [...tabs];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }, []);
 
   const addRecentFile = useCallback((p: string) => {
     setRecentFiles((prev) => {
@@ -230,8 +245,31 @@ export function App() {
         const t = await fetchTree();
         setTree(t.tree);
         const fromUrl = getInitialFileFromUrl();
-        const target = fromUrl ?? findFirstMarkdown(t.tree);
-        if (target) setCurrentPath(target);
+        // Try auto-restore from last-used session if there's no URL override.
+        let restoredFromSession = false;
+        if (!fromUrl) {
+          try {
+            const ss = await fetchSessions();
+            const lastName = ss.lastUsed;
+            const last = lastName ? ss.sessions[lastName] : null;
+            if (last) {
+              setLeftTabs(last.leftTabs ?? (last.leftPath ? [last.leftPath] : []));
+              setRightTabs(last.rightTabs ?? (last.rightPath ? [last.rightPath] : []));
+              setCurrentPath(last.leftPath);
+              setRightPath(last.rightPath);
+              setSplitOpen(last.splitOpen);
+              setSplitRatio(last.splitRatio);
+              setActivePane(last.activePane);
+              if (last.leftPdfPage) setPdfInitialPage(last.leftPdfPage);
+              if (last.rightPdfPage) setRightPdfInitialPage(last.rightPdfPage);
+              restoredFromSession = true;
+            }
+          } catch { /* fall through to default */ }
+        }
+        if (!restoredFromSession) {
+          const target = fromUrl ?? findFirstMarkdown(t.tree);
+          if (target) setCurrentPath(target);
+        }
       } catch (e: unknown) {
         setError((e as Error).message);
       }
@@ -658,6 +696,29 @@ A:
         setMinimapOpen((s) => !s);
         return;
       }
+      // Tab cycle: Ctrl+Tab / Ctrl+Shift+Tab cycles through tabs in the
+      // active pane. Ctrl+W closes the current tab.
+      if ((e.metaKey || e.ctrlKey) && e.key === "Tab") {
+        e.preventDefault();
+        const tabs = activePane === "right" ? rightTabs : leftTabs;
+        const cur = activePane === "right" ? rightPath : currentPath;
+        if (tabs.length === 0) return;
+        const idx = cur ? tabs.indexOf(cur) : -1;
+        const next = e.shiftKey
+          ? tabs[(idx - 1 + tabs.length) % tabs.length]
+          : tabs[(idx + 1) % tabs.length];
+        if (activePane === "right") setRightPath(next);
+        else setCurrentPath(next);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        const cur = activePane === "right" ? rightPath : currentPath;
+        if (!cur) return;
+        if (activePane === "right") closeRightTab(cur);
+        else closeLeftTab(cur);
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
         e.preventDefault();
         setSplitOpen((s) => {
@@ -700,6 +761,8 @@ A:
       else if (e.key === "g") setShowGraph(true);
       else if (e.key === "s") setShowFlashcards(true);
       else if (e.key === "a") setShowArxiv(true);
+      else if (e.key === "n") setShowNewNote(true);
+      else if (e.key === ",") setShowSettings(true);
       else if (e.key === "?") setShowHelp((v) => !v);
       else if (e.key === "Escape") {
         setShowHelp(false);
@@ -712,11 +775,13 @@ A:
         setShowSessions(false);
         setShowDailyPrompt(false);
         setShowDailyTemplateEditor(false);
+        setShowNewNote(false);
+        setShowSettings(false);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [editing, cycleFocus, markCurrentRead, navRelative, zoomIn, zoomOut, zoomReset, currentPath, currentKind]);
+  }, [editing, cycleFocus, markCurrentRead, navRelative, zoomIn, zoomOut, zoomReset, currentPath, currentKind, activePane, leftTabs, rightTabs, rightPath, closeLeftTab, closeRightTab]);
 
   // Sidebar resize
   const sidebarResizingRef = useRef(false);
@@ -836,6 +901,7 @@ A:
             setActivePane("right");
           }}
           onToggleRead={toggleRead}
+          onContextMenu={(node, x, y) => setCtxMenu({ node, x, y })}
         />
       )}
       {reserveSidebar && (
@@ -895,6 +961,7 @@ A:
             if (index?.files.includes(path)) setCurrentPath(path);
             else setShowDailyPrompt(true);
           }}
+          onOpenSettings={() => setShowSettings(true)}
           splitOpen={splitOpen}
           onToggleSplit={() => {
             setSplitOpen((s) => {
@@ -920,27 +987,14 @@ A:
             className={`pane pane-left ${activePane === "left" && splitOpen ? "is-active" : ""}`}
             onMouseDown={() => setActivePane("left")}
           >
-            {splitOpen && (
-              <div className="pane-header">
-                <div className="pane-label" title={currentPath ?? ""}>
-                  <span className="pane-side-tag">L</span>
-                  <span className="pane-filename">
-                    {currentPath ? currentPath.split("/").pop() : "Empty"}
-                  </span>
-                </div>
-                <div className="pane-header-actions">
-                  {canEdit && (
-                    <button
-                      className={`iconbtn ghost ${editing ? "is-active" : ""}`}
-                      onClick={() => setEditing((v) => !v)}
-                      title={editing ? "View" : "Edit"}
-                    >
-                      {editing ? <IconEye size={13} /> : <IconEdit size={13} />}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
+            <TabBar
+              side="left"
+              tabs={leftTabs}
+              activeTab={currentPath}
+              onActivate={(p) => setCurrentPath(p)}
+              onClose={closeLeftTab}
+              onReorder={(from, to) => reorderTabs("left", from, to)}
+            />
             <div className="pane-body">
               {error && <div className="error">{error}</div>}
               {loading && <div className="loading">Loading…</div>}
@@ -953,6 +1007,7 @@ A:
                   zoom={zoom}
                   onSave={onSave}
                   onCancel={() => setEditing(false)}
+                  wikiFiles={index?.files}
                 />
               )}
               {!loading && !error && currentPath && !editing && (
@@ -1028,14 +1083,18 @@ A:
             <Pane
               side="right"
               active={activePane === "right"}
-              path={rightPath}
+              tabs={rightTabs}
+              activeTab={rightPath}
+              onActivateTab={(p) => setRightPath(p)}
+              onCloseTab={closeRightTab}
+              onReorderTabs={(from, to) => reorderTabs("right", from, to)}
               pdfInitialPage={rightPdfInitialPage}
               theme={codeTheme}
               zoom={zoom}
               wikiResolver={wikiResolver}
+              wikiFiles={index?.files}
               onFocus={() => setActivePane("right")}
-              onPathChange={(p) => setRightPath(p)}
-              onClose={() => {
+              onClosePane={() => {
                 setSplitOpen(false);
                 setActivePane("left");
               }}
@@ -1142,15 +1201,23 @@ A:
             splitOpen,
             splitRatio,
             activePane,
+            leftPdfPage: pdfInitialPage,
+            rightPdfPage: rightPdfInitialPage,
+            leftTabs,
+            rightTabs,
           }}
           onLoad={(s) => {
-            // Apply the saved snapshot. We do this in a single batch by
-            // setting state in dependency order; effects will pick up.
+            // Restore tabs first so the effect that adds activeTab to leftTabs
+            // doesn't kick in with the wrong list.
+            setLeftTabs(s.leftTabs ?? (s.leftPath ? [s.leftPath] : []));
+            setRightTabs(s.rightTabs ?? (s.rightPath ? [s.rightPath] : []));
             setCurrentPath(s.leftPath);
             setRightPath(s.rightPath);
             setSplitOpen(s.splitOpen);
             setSplitRatio(s.splitRatio);
             setActivePane(s.activePane);
+            if (s.leftPdfPage) setPdfInitialPage(s.leftPdfPage);
+            if (s.rightPdfPage) setRightPdfInitialPage(s.rightPdfPage);
             setShowSessions(false);
           }}
           onClose={() => setShowSessions(false)}
@@ -1174,6 +1241,210 @@ A:
 
       {showDailyTemplateEditor && (
         <DailyTemplateEditor onClose={() => setShowDailyTemplateEditor(false)} />
+      )}
+
+      {showSettings && (
+        <Settings
+          zoom={zoom}
+          onSetZoom={setZoom}
+          overlay={overlay}
+          onSetOverlay={setOverlay}
+          minimapOpen={minimapOpen}
+          onSetMinimapOpen={setMinimapOpen}
+          sidebarOpen={sidebarOpen}
+          onSetSidebarOpen={setSidebarOpen}
+          splitOpen={splitOpen}
+          onSetSplitOpen={(v) => {
+            setSplitOpen(v);
+            if (v && !rightPath && currentPath) setRightPath(currentPath);
+          }}
+          themeName={typeof theme === "string" && theme.startsWith("custom:") ? theme.slice(7) : String(theme)}
+          onOpenThemeStudio={() => {
+            setShowSettings(false);
+            setShowThemeStudio(true);
+          }}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {ctxMenu && (() => {
+        const node = ctxMenu.node;
+        const isFile = node.type === "file";
+        const dir = node.path.includes("/") ? node.path.slice(0, node.path.lastIndexOf("/")) : "";
+        const actions: ContextAction[] = [];
+        if (isFile) {
+          actions.push({ id: "open", label: "Open", onPick: () => setCurrentPath(node.path) });
+          if (splitOpen || true) {
+            actions.push({
+              id: "open-right",
+              label: "Open in right pane",
+              onPick: () => { setSplitOpen(true); setRightPath(node.path); setActivePane("right"); },
+            });
+          }
+        } else {
+          actions.push({
+            id: "new-file-here",
+            label: "New file here…",
+            onPick: () => setFsPrompt({
+              title: "New file",
+              hint: `Inside ${node.path || "/"}. .md is added if missing.`,
+              initial: "",
+              confirmLabel: "Create",
+              onConfirm: async (val) => {
+                let name = val.trim();
+                if (!name) throw new Error("Type a filename.");
+                if (!/\.[a-z0-9]+$/i.test(name)) name += ".md";
+                const full = node.path ? `${node.path}/${name}` : name;
+                await saveFile(full, `# ${name.replace(/\.[^/.]+$/, "")}\n\n`);
+                await reloadTree();
+                setCurrentPath(full);
+                setEditing(true);
+              },
+            }),
+          });
+          actions.push({
+            id: "new-folder-here",
+            label: "New folder…",
+            onPick: () => setFsPrompt({
+              title: "New folder",
+              initial: "",
+              confirmLabel: "Create",
+              onConfirm: async (val) => {
+                if (!val.trim()) throw new Error("Type a name.");
+                const safe = val.trim().replace(/[^a-zA-Z0-9._ -]/g, "");
+                if (!safe) throw new Error("Invalid name.");
+                const full = node.path ? `${node.path}/${safe}` : safe;
+                await makeDir(full);
+                await reloadTree();
+              },
+            }),
+          });
+        }
+        actions.push({ id: "sep1", label: "", separator: true, onPick: () => {} });
+        actions.push({
+          id: "rename",
+          label: "Rename…",
+          onPick: () => setFsPrompt({
+            title: `Rename ${node.name}`,
+            initial: node.name,
+            confirmLabel: "Rename",
+            onConfirm: async (val) => {
+              if (!val.trim()) throw new Error("Type a new name.");
+              if (val === node.name) return;
+              const safe = val.trim().replace(/[^a-zA-Z0-9._/ -]/g, "");
+              const target = dir ? `${dir}/${safe}` : safe;
+              await renameFile(node.path, target);
+              await reloadTree();
+              // Rewrite any tabs that pointed at the moved/renamed path.
+              setLeftTabs((tabs) => tabs.map((t) => t === node.path ? target : t));
+              setRightTabs((tabs) => tabs.map((t) => t === node.path ? target : t));
+              if (currentPath === node.path) setCurrentPath(target);
+              if (rightPath === node.path) setRightPath(target);
+            },
+          }),
+        });
+        actions.push({
+          id: "duplicate",
+          label: "Duplicate",
+          onPick: () => setFsPrompt({
+            title: `Duplicate ${node.name}`,
+            initial: node.name.replace(/(\.[^.]+)?$/, (m) => `-copy${m}`),
+            confirmLabel: "Duplicate",
+            onConfirm: async (val) => {
+              const safe = val.trim().replace(/[^a-zA-Z0-9._/ -]/g, "");
+              if (!safe) throw new Error("Type a name.");
+              const target = dir ? `${dir}/${safe}` : safe;
+              await duplicateFile(node.path, target);
+              await reloadTree();
+            },
+          }),
+        });
+        actions.push({
+          id: "move",
+          label: "Move…",
+          onPick: () => setFsPrompt({
+            title: `Move ${node.name}`,
+            hint: "Type the new path (e.g. archive/2026/note.md).",
+            initial: node.path,
+            confirmLabel: "Move",
+            onConfirm: async (val) => {
+              const target = val.trim();
+              if (!target || target === node.path) return;
+              await renameFile(node.path, target);
+              await reloadTree();
+              // Rewrite any tabs that pointed at the moved/renamed path.
+              setLeftTabs((tabs) => tabs.map((t) => t === node.path ? target : t));
+              setRightTabs((tabs) => tabs.map((t) => t === node.path ? target : t));
+              if (currentPath === node.path) setCurrentPath(target);
+              if (rightPath === node.path) setRightPath(target);
+            },
+          }),
+        });
+        actions.push({ id: "sep2", label: "", separator: true, onPick: () => {} });
+        actions.push({
+          id: "delete",
+          label: isFile ? "Delete file" : "Delete folder + contents",
+          danger: true,
+          onPick: () => setFsPrompt({
+            title: `Delete ${node.name}?`,
+            hint: isFile
+              ? `This permanently deletes ${node.path}. Type DELETE to confirm.`
+              : `This permanently removes the folder ${node.path} and everything inside. Type DELETE to confirm.`,
+            initial: "",
+            confirmLabel: "Delete",
+            danger: true,
+            onConfirm: async (val) => {
+              if (val.trim() !== "DELETE") throw new Error('Type DELETE in uppercase to confirm.');
+              await deleteFile(node.path);
+              await reloadTree();
+              // Remove any open tabs pointing at the deleted path / its
+              // children (folder delete).
+              const isAffected = (p: string) =>
+                p === node.path || p.startsWith(node.path + "/");
+              setLeftTabs((tabs) => tabs.filter((t) => !isAffected(t)));
+              setRightTabs((tabs) => tabs.filter((t) => !isAffected(t)));
+              if (currentPath && isAffected(currentPath)) setCurrentPath(null);
+              if (rightPath && isAffected(rightPath)) setRightPath(null);
+            },
+          }),
+        });
+        return (
+          <ContextMenu
+            x={ctxMenu.x}
+            y={ctxMenu.y}
+            actions={actions}
+            target={node}
+            onClose={() => setCtxMenu(null)}
+          />
+        );
+      })()}
+
+      {fsPrompt && (
+        <FsPrompt
+          title={fsPrompt.title}
+          hint={fsPrompt.hint}
+          initial={fsPrompt.initial}
+          confirmLabel={fsPrompt.confirmLabel}
+          danger={fsPrompt.danger}
+          onConfirm={async (v) => { await fsPrompt.onConfirm(v); setFsPrompt(null); }}
+          onClose={() => setFsPrompt(null)}
+        />
+      )}
+
+      {showNewNote && (
+        <NewNotePrompt
+          defaultDir={currentPath && currentPath.includes("/")
+            ? currentPath.slice(0, currentPath.lastIndexOf("/"))
+            : "."}
+          onClose={() => setShowNewNote(false)}
+          onCreated={async (p) => {
+            setShowNewNote(false);
+            await reloadTree();
+            setCurrentPath(p);
+            // Open the editor immediately so the user can start typing.
+            setEditing(true);
+          }}
+        />
       )}
 
       {showArxiv && (
@@ -1221,6 +1492,7 @@ A:
                 <tr><td><kbd>g</kbd></td><td>Knowledge graph</td></tr>
                 <tr><td><kbd>s</kbd></td><td>Study flashcards (if any in this file)</td></tr>
                 <tr><td><kbd>a</kbd></td><td>Import arXiv paper as PDF</td></tr>
+                <tr><td><kbd>n</kbd></td><td>New note (asks for filename)</td></tr>
                 <tr><td><kbd>Ctrl</kbd>+<kbd>\</kbd></td><td>Toggle split view (2 panes)</td></tr>
                 <tr><td>Alt-click in sidebar</td><td>Open file in the right pane</td></tr>
                 <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></td><td>Open / create today's daily note</td></tr>

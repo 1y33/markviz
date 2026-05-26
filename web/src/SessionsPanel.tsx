@@ -9,6 +9,10 @@ interface Props {
     splitOpen: boolean;
     splitRatio: number;
     activePane: "left" | "right";
+    leftPdfPage?: number | null;
+    rightPdfPage?: number | null;
+    leftTabs?: string[];
+    rightTabs?: string[];
   };
   onLoad: (s: SavedSession) => void;
   onClose: () => void;
@@ -26,6 +30,7 @@ function formatAge(ts: number): string {
 
 export function SessionsPanel({ current, onLoad, onClose }: Props) {
   const [sessions, setSessions] = useState<Record<string, SavedSession>>({});
+  const [lastUsed, setLastUsed] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveName, setSaveName] = useState("");
@@ -33,14 +38,18 @@ export function SessionsPanel({ current, onLoad, onClose }: Props) {
 
   useEffect(() => {
     fetchSessions()
-      .then((r) => setSessions(r.sessions ?? {}))
+      .then((r) => {
+        setSessions(r.sessions ?? {});
+        setLastUsed(r.lastUsed ?? null);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
-  const persist = async (next: Record<string, SavedSession>) => {
+  const persist = async (next: Record<string, SavedSession>, lu?: string | null) => {
     setSessions(next);
-    try { await saveSessions({ sessions: next }); }
+    if (lu !== undefined) setLastUsed(lu);
+    try { await saveSessions({ sessions: next, lastUsed: lu !== undefined ? lu : lastUsed }); }
     catch (e: unknown) { setError((e as Error).message); }
   };
 
@@ -56,9 +65,14 @@ export function SessionsPanel({ current, onLoad, onClose }: Props) {
       splitOpen: current.splitOpen,
       splitRatio: current.splitRatio,
       activePane: current.activePane,
+      leftPdfPage: current.leftPdfPage ?? null,
+      rightPdfPage: current.rightPdfPage ?? null,
+      leftTabs: current.leftTabs ?? [],
+      rightTabs: current.rightTabs ?? [],
       savedAt: Date.now(),
     };
-    await persist({ ...sessions, [n]: newOne });
+    // Saving a session also marks it as last-used, so the next boot restores it.
+    await persist({ ...sessions, [n]: newOne }, n);
     setSaving(false);
     setSaveName("");
   };
@@ -66,7 +80,14 @@ export function SessionsPanel({ current, onLoad, onClose }: Props) {
   const doDelete = async (name: string) => {
     const next = { ...sessions };
     delete next[name];
-    await persist(next);
+    // If the deleted one was last-used, clear lastUsed too.
+    await persist(next, lastUsed === name ? null : undefined);
+  };
+
+  const doLoad = (s: SavedSession) => {
+    // Persist the last-used marker so a reboot picks it up.
+    persist(sessions, s.name);
+    onLoad(s);
   };
 
   const list = Object.values(sessions).sort((a, b) => b.savedAt - a.savedAt);
@@ -134,18 +155,27 @@ export function SessionsPanel({ current, onLoad, onClose }: Props) {
             {list.map((s) => (
               <li key={s.name} className="sessions-item">
                 <button
-                  className="sessions-load"
-                  onClick={() => onLoad(s)}
+                  className={`sessions-load ${s.name === lastUsed ? "is-last-used" : ""}`}
+                  onClick={() => doLoad(s)}
                   title={`Load: ${s.leftPath ?? "—"}${s.splitOpen ? `  ↔  ${s.rightPath ?? "—"}` : ""}`}
                 >
-                  <div className="sessions-name">{s.name}</div>
+                  <div className="sessions-name">
+                    {s.name}
+                    {s.name === lastUsed && <span className="sessions-pill">last used</span>}
+                  </div>
                   <div className="sessions-meta">
                     <span className="pane-side-tag">L</span>
                     <span className="pane-filename">{s.leftPath ?? "—"}</span>
+                    {(s.leftTabs?.length ?? 0) > 1 && (
+                      <span className="sessions-tabcount">+{(s.leftTabs?.length ?? 0) - 1} tabs</span>
+                    )}
                     {s.splitOpen && (
                       <>
                         <span className="pane-side-tag" style={{ marginLeft: 8 }}>R</span>
                         <span className="pane-filename">{s.rightPath ?? "—"}</span>
+                        {(s.rightTabs?.length ?? 0) > 1 && (
+                          <span className="sessions-tabcount">+{(s.rightTabs?.length ?? 0) - 1} tabs</span>
+                        )}
                       </>
                     )}
                     <span className="sessions-age">· {formatAge(s.savedAt)}</span>

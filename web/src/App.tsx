@@ -11,12 +11,32 @@ import { GraphView } from "./GraphView";
 import { FlashcardsBadge, FlashcardsStudy } from "./Flashcards";
 import { subscribeFs } from "./liveReload";
 import { CommandPalette } from "./CommandPalette";
+import { ArxivImport } from "./ArxivImport";
+import { ThemeStudio } from "./ThemeStudio";
+import { Pane } from "./Pane";
+import { IconEdit, IconEye } from "./icons";
 import { setStoragePrefix, lsGet, lsSet } from "./storage";
-import type { FileKind, FocusMode, RootInfo, Theme, TreeNode } from "./types";
+import type { BuiltinTheme, FileKind, FocusMode, ReadingOverlay, RootInfo, SavedTheme, Theme, ThemeCustomization, TreeNode } from "./types";
+
+const BUILTIN_THEMES: BuiltinTheme[] = [
+  "dark", "light", "github-light", "sepia", "solarized",
+  "nord", "dracula", "gruvbox-dark", "tokyo-night", "catppuccin-mocha", "rose-pine",
+];
+
+function isBuiltinTheme(t: string): t is BuiltinTheme {
+  return (BUILTIN_THEMES as string[]).includes(t);
+}
 
 function getInitialFileFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search);
   return params.get("file");
+}
+
+function getInitialPageFromUrl(): number | null {
+  const v = new URLSearchParams(window.location.search).get("page");
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null;
 }
 
 function getInitialFocusFromUrl(): FocusMode | null {
@@ -33,6 +53,14 @@ function setUrlFile(path: string | null) {
   const url = new URL(window.location.href);
   if (path) url.searchParams.set("file", path);
   else url.searchParams.delete("file");
+  url.searchParams.delete("page");
+  window.history.replaceState({}, "", url);
+}
+
+function setUrlPage(page: number | null) {
+  const url = new URL(window.location.href);
+  if (page && page > 1) url.searchParams.set("page", String(page));
+  else url.searchParams.delete("page");
   window.history.replaceState({}, "", url);
 }
 
@@ -52,6 +80,28 @@ function findFirstMarkdown(nodes: TreeNode[]): string | null {
     }
   }
   return null;
+}
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([a-f0-9]{3}|[a-f0-9]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  let h = m[1];
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function hexToRgba(hex: string, a: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
+}
+
+function lightenHex(hex: string, amt: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const [r, g, b] = rgb.map((c) => Math.round(c + (255 - c) * amt)) as [number, number, number];
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 function resolveRelativeHref(from: string | null, href: string): string {
@@ -89,6 +139,8 @@ export function App() {
   const [minimapOpen, setMinimapOpen] = useState<boolean>(() => lsGet<boolean>("minimapOpen", true));
   const [minimapWidth, setMinimapWidth] = useState<number>(() => lsGet<number>("minimapWidth", 150));
   const [zoom, setZoom] = useState<number>(() => lsGet<number>("zoom", 1));
+  const [overlay, setOverlay] = useState<ReadingOverlay>(() => lsGet<ReadingOverlay>("overlay", "off"));
+  useEffect(() => { if (info) lsSet("overlay", overlay); }, [overlay, info]);
   const [editing, setEditing] = useState(false);
   const [readSet, setReadSet] = useState<Set<string>>(new Set());
   const [showHelp, setShowHelp] = useState(false);
@@ -104,6 +156,26 @@ export function App() {
   });
   const [recentFiles, setRecentFiles] = useState<string[]>(() => lsGet<string[]>("recentFiles", []));
   const [showPalette, setShowPalette] = useState(false);
+  const [showArxiv, setShowArxiv] = useState(false);
+  const [pdfInitialPage, setPdfInitialPage] = useState<number | null>(() => getInitialPageFromUrl());
+  const [showThemeStudio, setShowThemeStudio] = useState(false);
+  const [themeCustom, setThemeCustom] = useState<Record<string, ThemeCustomization>>(
+    () => lsGet<Record<string, ThemeCustomization>>("themeCustom", {}),
+  );
+  const [savedThemes, setSavedThemes] = useState<Record<string, SavedTheme>>(
+    () => lsGet<Record<string, SavedTheme>>("savedThemes", {}),
+  );
+
+  // === Split view (right pane) ===
+  const [splitOpen, setSplitOpen] = useState<boolean>(() => lsGet<boolean>("splitOpen", false));
+  const [splitRatio, setSplitRatio] = useState<number>(() => lsGet<number>("splitRatio", 0.5));
+  const [rightPath, setRightPath] = useState<string | null>(() => lsGet<string | null>("rightPath", null));
+  const [rightPdfInitialPage, setRightPdfInitialPage] = useState<number | null>(null);
+  const [activePane, setActivePane] = useState<"left" | "right">("left");
+
+  useEffect(() => { if (info) lsSet("splitOpen", splitOpen); }, [splitOpen, info]);
+  useEffect(() => { if (info) lsSet("splitRatio", splitRatio); }, [splitRatio, info]);
+  useEffect(() => { if (info) lsSet("rightPath", rightPath); }, [rightPath, info]);
 
   const addRecentFile = useCallback((p: string) => {
     setRecentFiles((prev) => {
@@ -195,10 +267,63 @@ export function App() {
   useEffect(() => { if (info) lsSet("minimapWidth", minimapWidth); }, [minimapWidth, info]);
   useEffect(() => { if (info) lsSet("zoom", zoom); }, [zoom, info]);
 
+  // Resolve the active theme into (builtin base, customization). For builtin
+  // themes we use the per-theme overrides map; for saved custom themes we use
+  // the customization that was frozen into the SavedTheme when it was created.
+  const resolvedTheme = useMemo<{ base: BuiltinTheme; customization: ThemeCustomization }>(() => {
+    if (typeof theme === "string" && theme.startsWith("custom:")) {
+      const key = theme.slice("custom:".length);
+      const saved = savedThemes[key];
+      if (saved) return { base: saved.base, customization: saved.customization };
+    }
+    if (isBuiltinTheme(theme)) {
+      return { base: theme, customization: themeCustom[theme] ?? {} };
+    }
+    return { base: "dark", customization: {} };
+  }, [theme, themeCustom, savedThemes]);
+
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.theme = resolvedTheme.base;
     document.documentElement.dataset.focus = focus;
-  }, [theme, focus]);
+    if (overlay && overlay !== "off") document.documentElement.dataset.overlay = overlay;
+    else delete document.documentElement.dataset.overlay;
+  }, [resolvedTheme.base, focus, overlay]);
+
+  // Persist customizations + saved themes.
+  useEffect(() => { if (info) lsSet("themeCustom", themeCustom); }, [themeCustom, info]);
+  useEffect(() => { if (info) lsSet("savedThemes", savedThemes); }, [savedThemes, info]);
+  useEffect(() => {
+    const root = document.documentElement;
+    const c = resolvedTheme.customization;
+    // Build a list of (var, value) so we can both apply and clean up.
+    const vars: Array<[string, string | null]> = [
+      ["--font-sans", c.fontSans ?? null],
+      ["--font-mono", c.fontMono ?? null],
+      ["--font-serif", c.fontSerif ?? null],
+      ["--reader-font-size", c.fontSizePx ? `${c.fontSizePx}px` : null],
+      ["--reader-line-height", c.lineHeight ? String(c.lineHeight) : null],
+      ["--md-content-max", c.contentMaxPx ? `${c.contentMaxPx}px` : null],
+    ];
+    for (const [k, v] of vars) {
+      if (v) root.style.setProperty(k, v);
+      else root.style.removeProperty(k);
+    }
+    // Accent + derived alpha variants.
+    if (c.accent) {
+      root.style.setProperty("--accent", c.accent);
+      root.style.setProperty("--accent-hover", lightenHex(c.accent, 0.18));
+      root.style.setProperty("--accent-soft", hexToRgba(c.accent, 0.16));
+      root.style.setProperty("--accent-border", hexToRgba(c.accent, 0.4));
+      root.style.setProperty("--selection", hexToRgba(c.accent, 0.28));
+    } else {
+      for (const k of ["--accent", "--accent-hover", "--accent-soft", "--accent-border", "--selection"]) {
+        root.style.removeProperty(k);
+      }
+    }
+    // Serif-body toggle is a data attribute we hook in CSS.
+    if (c.serifBody) root.dataset.serifBody = "1";
+    else delete root.dataset.serifBody;
+  }, [resolvedTheme]);
 
   // Dynamic document title — show the open file (or root name) in the tab.
   useEffect(() => {
@@ -288,6 +413,101 @@ export function App() {
   }, [currentPath, editing, reloadTree]);
   void reloadPing;
 
+  // Sibling note for any PDF: same path with .pdf swapped for .md / .markdown.
+  // Resolved via the file index so we don't 404 against the server.
+  const resolveSiblingNote = useCallback((pdfPath: string) => {
+    if (!pdfPath.toLowerCase().endsWith(".pdf")) return null;
+    const stem = pdfPath.replace(/\.pdf$/i, "");
+    const candidates = [`${stem}.md`, `${stem}.markdown`, `${stem}.mdx`];
+    const files = index?.files ?? [];
+    for (const c of candidates) {
+      if (files.includes(c)) return { path: c, exists: true };
+    }
+    return { path: `${stem}.md`, exists: false };
+  }, [index]);
+
+  const pdfSibling = useMemo(() => {
+    if (currentKind !== "pdf" || !currentPath) return null;
+    return resolveSiblingNote(currentPath);
+  }, [currentKind, currentPath, resolveSiblingNote]);
+
+  const createSiblingNote = useCallback(async (pdfPath: string): Promise<string> => {
+    const sib = resolveSiblingNote(pdfPath);
+    if (!sib) throw new Error("not a pdf");
+    if (sib.exists) return sib.path;
+    const pdfName = pdfPath.split("/").pop() ?? "paper.pdf";
+    const stem = pdfName.replace(/\.pdf$/i, "");
+    const title = stem.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const today = new Date().toISOString().slice(0, 10);
+    const template = `# ${title}
+
+> Notes on [\`${pdfName}\`](./${pdfName}).
+
+**Started:** ${today}
+
+#paper
+
+## Summary
+
+_Three sentences on what this paper is about._
+
+## Key ideas
+
+-
+-
+-
+
+## Quotes
+
+>
+> — p. _N_
+
+## Open questions
+
+-
+
+## Flashcards
+
+\`\`\`flashcards
+Q:
+A:
+\`\`\`
+`;
+    await saveFile(sib.path, template);
+    await reloadTree();
+    return sib.path;
+  }, [resolveSiblingNote, reloadTree]);
+
+  // Open a sibling note when the user clicks the PDF toolbar button. If the
+  // split view is open, the note opens in the *other* pane so PDF + note
+  // sit side by side; if not, the split view auto-opens.
+  const openSiblingFromPane = useCallback(async (siblingPath: string, exists: boolean, fromPdfPath: string) => {
+    let target = siblingPath;
+    if (!exists) {
+      try {
+        target = await createSiblingNote(fromPdfPath);
+      } catch (e: unknown) {
+        setError((e as Error).message);
+        return;
+      }
+    }
+    // Auto-open split view if it's currently single-pane.
+    if (!splitOpen) {
+      setSplitOpen(true);
+      setRightPath(target);
+      setActivePane("right");
+    } else {
+      // Show the note in the pane that does NOT contain the PDF.
+      if (currentPath === fromPdfPath) {
+        setRightPath(target);
+        setActivePane("right");
+      } else {
+        setCurrentPath(target);
+        setActivePane("left");
+      }
+    }
+  }, [splitOpen, currentPath, createSiblingNote]);
+
   const wikiResolver = useCallback((target: string): string | null => {
     if (!index) return null;
     const key = target.toLowerCase().trim();
@@ -331,24 +551,35 @@ export function App() {
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const ce = e as CustomEvent<{ href: string; from: string | null; abs?: boolean }>;
+      const ce = e as CustomEvent<{ href: string; from: string | null; abs?: boolean; pane?: "left" | "right" }>;
       const resolved = ce.detail.abs
         ? ce.detail.href.split("#")[0]
         : resolveRelativeHref(ce.detail.from, ce.detail.href);
-      setCurrentPath(resolved);
-      // Scroll to heading if specified
       const hashIdx = ce.detail.href.indexOf("#");
-      if (hashIdx >= 0) {
-        const heading = ce.detail.href.slice(hashIdx + 1);
+      const hash = hashIdx >= 0 ? ce.detail.href.slice(hashIdx + 1) : "";
+      const pageMatch = /^p=(\d+)$/i.exec(hash);
+      // Decide which pane to drive: explicit override → active pane (if split
+      // is open) → left.
+      const targetPane: "left" | "right" =
+        ce.detail.pane ?? (splitOpen ? activePane : "left");
+      if (targetPane === "right") {
+        setRightPath(resolved);
+        if (pageMatch) setRightPdfInitialPage(Number(pageMatch[1]));
+      } else {
+        setCurrentPath(resolved);
+        if (pageMatch) setPdfInitialPage(Number(pageMatch[1]));
+      }
+      if (hash && !pageMatch) {
+        // Markdown heading anchor.
         setTimeout(() => {
-          const el = document.getElementById(heading);
+          const el = document.getElementById(hash);
           if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 250);
       }
     };
     window.addEventListener("markviz:navigate", handler as EventListener);
     return () => window.removeEventListener("markviz:navigate", handler as EventListener);
-  }, []);
+  }, [splitOpen, activePane]);
 
   const fileList = useMemo(() => {
     const out: string[] = [];
@@ -410,6 +641,15 @@ export function App() {
         setMinimapOpen((s) => !s);
         return;
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
+        e.preventDefault();
+        setSplitOpen((s) => {
+          const next = !s;
+          if (next && !rightPath && currentPath) setRightPath(currentPath);
+          return next;
+        });
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "e") {
         e.preventDefault();
         if (currentPath && (currentKind === "markdown" || currentKind === "text")) {
@@ -442,6 +682,7 @@ export function App() {
       else if (e.key === "o") setShowFolderPicker(true);
       else if (e.key === "g") setShowGraph(true);
       else if (e.key === "s") setShowFlashcards(true);
+      else if (e.key === "a") setShowArxiv(true);
       else if (e.key === "?") setShowHelp((v) => !v);
       else if (e.key === "Escape") {
         setShowHelp(false);
@@ -449,6 +690,8 @@ export function App() {
         setShowGraph(false);
         setShowFlashcards(false);
         setShowPalette(false);
+        setShowArxiv(false);
+        setShowThemeStudio(false);
       }
     };
     window.addEventListener("keydown", handler);
@@ -560,10 +803,17 @@ export function App() {
           tree={tree}
           rootName={info.rootName}
           currentPath={currentPath}
+          rightPath={splitOpen ? rightPath : null}
           readPaths={readSet}
           onSelect={(p) => {
-            setCurrentPath(p);
+            if (activePane === "right" && splitOpen) setRightPath(p);
+            else setCurrentPath(p);
             if (sidebarIsOverlay) setZenSidebarPeek(false);
+          }}
+          onOpenInRightPane={(p) => {
+            setSplitOpen(true);
+            setRightPath(p);
+            setActivePane("right");
           }}
           onToggleRead={toggleRead}
         />
@@ -602,45 +852,172 @@ export function App() {
           onOpenGraph={() => setShowGraph(true)}
           onPrint={() => window.print()}
           onHelp={() => setShowHelp(true)}
+          onArxivImport={() => setShowArxiv(true)}
+          onCustomizeTheme={() => setShowThemeStudio(true)}
+          savedThemes={savedThemes}
+          onDeleteSavedTheme={(name) => {
+            setSavedThemes((all) => {
+              const next = { ...all };
+              delete next[name];
+              return next;
+            });
+            const id = `custom:${name}` as Theme;
+            if (theme === id) {
+              const saved = savedThemes[name];
+              setTheme(saved?.base ?? "dark");
+            }
+          }}
+          overlay={overlay}
+          onSetOverlay={setOverlay}
+          splitOpen={splitOpen}
+          onToggleSplit={() => {
+            setSplitOpen((s) => {
+              const next = !s;
+              if (next && !rightPath && currentPath) setRightPath(currentPath);
+              return next;
+            });
+          }}
+          onSwapPanes={() => {
+            const l = currentPath;
+            const r = rightPath;
+            setCurrentPath(r);
+            setRightPath(l);
+          }}
         />
-        <div className="content">
-          {error && <div className="error">{error}</div>}
-          {loading && <div className="loading">Loading…</div>}
-          {!loading && !error && currentPath && editing && content !== null && (
-            <Editor
-              initialContent={content}
-              filePath={currentPath}
-              kind={currentKind}
-              theme={codeTheme}
-              zoom={zoom}
-              onSave={onSave}
-              onCancel={() => setEditing(false)}
-            />
-          )}
-          {!loading && !error && currentPath && !editing && (
-            <>
-              <FileView
-                path={currentPath}
-                kind={currentKind}
-                content={content}
-                url={currentUrl}
-                theme={codeTheme}
-                zoom={zoom}
-                wikiResolver={wikiResolver}
-              />
-              {currentKind === "markdown" && content && (
-                <div className="extras-overlay">
-                  <FlashcardsBadge content={content} onStudy={() => setShowFlashcards(true)} />
+        <div
+          className={`content ${splitOpen ? "is-split" : ""}`}
+          style={splitOpen ? { gridTemplateColumns: `${splitRatio * 100}% 6px 1fr` } : undefined}
+        >
+          {/* Left pane = the historical "main view" backed by App state so
+              backlinks, flashcards, minimap continue to attach to it. */}
+          <section
+            className={`pane pane-left ${activePane === "left" && splitOpen ? "is-active" : ""}`}
+            onMouseDown={() => setActivePane("left")}
+          >
+            {splitOpen && (
+              <div className="pane-header">
+                <div className="pane-label" title={currentPath ?? ""}>
+                  <span className="pane-side-tag">L</span>
+                  <span className="pane-filename">
+                    {currentPath ? currentPath.split("/").pop() : "Empty"}
+                  </span>
+                </div>
+                <div className="pane-header-actions">
+                  {canEdit && (
+                    <button
+                      className={`iconbtn ghost ${editing ? "is-active" : ""}`}
+                      onClick={() => setEditing((v) => !v)}
+                      title={editing ? "View" : "Edit"}
+                    >
+                      {editing ? <IconEye size={13} /> : <IconEdit size={13} />}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="pane-body">
+              {error && <div className="error">{error}</div>}
+              {loading && <div className="loading">Loading…</div>}
+              {!loading && !error && currentPath && editing && content !== null && (
+                <Editor
+                  initialContent={content}
+                  filePath={currentPath}
+                  kind={currentKind}
+                  theme={codeTheme}
+                  zoom={zoom}
+                  onSave={onSave}
+                  onCancel={() => setEditing(false)}
+                />
+              )}
+              {!loading && !error && currentPath && !editing && (
+                <>
+                  <FileView
+                    path={currentPath}
+                    kind={currentKind}
+                    content={content}
+                    url={currentUrl}
+                    theme={codeTheme}
+                    zoom={zoom}
+                    wikiResolver={wikiResolver}
+                    pdfInitialPage={pdfInitialPage ?? undefined}
+                    pdfSiblingNoteState={
+                      currentKind === "pdf"
+                        ? pdfSibling?.exists ? "exists" : "missing"
+                        : "unknown"
+                    }
+                    onOpenPdfSiblingNote={
+                      currentKind === "pdf" && pdfSibling
+                        ? () => openSiblingFromPane(pdfSibling.path, pdfSibling.exists, currentPath!)
+                        : undefined
+                    }
+                    onPdfPageChange={(p) => {
+                      setUrlPage(p);
+                      setPdfInitialPage(null);
+                    }}
+                  />
+                  {currentKind === "markdown" && content && (
+                    <div className="extras-overlay">
+                      <FlashcardsBadge content={content} onStudy={() => setShowFlashcards(true)} />
+                    </div>
+                  )}
+                </>
+              )}
+              {!loading && !error && !currentPath && (
+                <div className="empty-state">
+                  <h2>markviz</h2>
+                  <p>Select a file from the sidebar to start reading.</p>
+                  <p className="hint">Press <kbd>?</kbd> for keyboard shortcuts.</p>
                 </div>
               )}
-            </>
-          )}
-          {!loading && !error && !currentPath && (
-            <div className="empty-state">
-              <h2>markviz</h2>
-              <p>Select a file from the sidebar to start reading.</p>
-              <p className="hint">Press <kbd>?</kbd> for keyboard shortcuts.</p>
             </div>
+          </section>
+
+          {splitOpen && (
+            <div
+              className="resize-handle resize-h-split"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const startX = e.clientX;
+                const startRatio = splitRatio;
+                const container = (e.currentTarget.parentElement as HTMLElement);
+                const containerWidth = container.getBoundingClientRect().width;
+                const move = (ev: MouseEvent) => {
+                  const dx = ev.clientX - startX;
+                  const next = Math.min(0.85, Math.max(0.15, startRatio + dx / containerWidth));
+                  setSplitRatio(next);
+                };
+                const up = () => {
+                  window.removeEventListener("mousemove", move);
+                  window.removeEventListener("mouseup", up);
+                };
+                window.addEventListener("mousemove", move);
+                window.addEventListener("mouseup", up);
+              }}
+              onDoubleClick={() => setSplitRatio(0.5)}
+              title="Drag to resize · double-click for 50/50"
+            />
+          )}
+
+          {splitOpen && (
+            <Pane
+              side="right"
+              active={activePane === "right"}
+              path={rightPath}
+              pdfInitialPage={rightPdfInitialPage}
+              theme={codeTheme}
+              zoom={zoom}
+              wikiResolver={wikiResolver}
+              onFocus={() => setActivePane("right")}
+              onPathChange={(p) => setRightPath(p)}
+              onClose={() => {
+                setSplitOpen(false);
+                setActivePane("left");
+              }}
+              resolveSiblingNote={resolveSiblingNote}
+              onOpenSibling={openSiblingFromPane}
+              showFlashcards={() => setShowFlashcards(true)}
+              reloadTreeAfterSave={reloadTree}
+            />
           )}
         </div>
       </main>
@@ -686,6 +1063,65 @@ export function App() {
         />
       )}
 
+      {showThemeStudio && (
+        <ThemeStudio
+          activeTheme={theme}
+          baseTheme={resolvedTheme.base}
+          value={resolvedTheme.customization}
+          existingSavedNames={Object.keys(savedThemes)}
+          onChange={(next) => {
+            if (typeof theme === "string" && theme.startsWith("custom:")) {
+              const name = theme.slice("custom:".length);
+              setSavedThemes((all) => ({
+                ...all,
+                [name]: { ...(all[name] ?? { name, base: resolvedTheme.base }), name, base: resolvedTheme.base, customization: next },
+              }));
+            } else if (isBuiltinTheme(theme)) {
+              setThemeCustom((all) => ({ ...all, [theme]: next }));
+            }
+          }}
+          onReset={() => {
+            if (typeof theme === "string" && theme.startsWith("custom:")) {
+              const name = theme.slice("custom:".length);
+              setSavedThemes((all) => ({
+                ...all,
+                [name]: { ...(all[name] ?? { name, base: resolvedTheme.base }), customization: {} },
+              }));
+            } else if (isBuiltinTheme(theme)) {
+              setThemeCustom((all) => {
+                const copy = { ...all };
+                delete copy[theme];
+                return copy;
+              });
+            }
+          }}
+          onSaveAs={(saved, replaceName) => {
+            setSavedThemes((all) => {
+              const next = { ...all };
+              if (replaceName && replaceName !== saved.name) delete next[replaceName];
+              next[saved.name] = saved;
+              return next;
+            });
+            setTheme(`custom:${saved.name}` as Theme);
+          }}
+          onClose={() => setShowThemeStudio(false)}
+        />
+      )}
+
+      {showArxiv && (
+        <ArxivImport
+          defaultDir={currentPath && currentPath.includes("/")
+            ? currentPath.slice(0, currentPath.lastIndexOf("/"))
+            : "."}
+          onClose={() => setShowArxiv(false)}
+          onImported={async (savedPath) => {
+            setShowArxiv(false);
+            await reloadTree();
+            setCurrentPath(savedPath);
+          }}
+        />
+      )}
+
       {showPalette && index && (
         <CommandPalette
           files={index.files}
@@ -716,6 +1152,9 @@ export function App() {
                 <tr><td><kbd>o</kbd></td><td>Open another folder</td></tr>
                 <tr><td><kbd>g</kbd></td><td>Knowledge graph</td></tr>
                 <tr><td><kbd>s</kbd></td><td>Study flashcards (if any in this file)</td></tr>
+                <tr><td><kbd>a</kbd></td><td>Import arXiv paper as PDF</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>\</kbd></td><td>Toggle split view (2 panes)</td></tr>
+                <tr><td>Alt-click in sidebar</td><td>Open file in the right pane</td></tr>
                 <tr><td><kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>Edit current file</td></tr>
                 <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save (in editor)</td></tr>
                 <tr><td><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> / <kbd>0</kbd></td><td>Zoom in / out / reset</td></tr>

@@ -1,4 +1,4 @@
-export type FileKind = "markdown" | "image" | "text" | "binary";
+export type FileKind = "markdown" | "image" | "text" | "pdf" | "binary";
 
 export interface TreeNode {
   name: string;
@@ -25,6 +25,40 @@ export interface RootInfo {
   home?: string;
 }
 
-export type Theme = "dark" | "light" | "sepia" | "nord" | "solarized" | "dracula";
+export type BuiltinTheme =
+  | "dark"
+  | "light"
+  | "sepia"
+  | "nord"
+  | "solarized"
+  | "dracula"
+  | "gruvbox-dark"
+  | "tokyo-night"
+  | "catppuccin-mocha"
+  | "github-light"
+  | "rose-pine";
+
+// User-defined themes are addressed by `custom:<name>` to distinguish them
+// from built-in theme tokens.
+export type Theme = BuiltinTheme | `custom:${string}`;
+
+export interface SavedTheme {
+  name: string;
+  base: BuiltinTheme;
+  customization: ThemeCustomization;
+}
+
+export interface ThemeCustomization {
+  accent?: string;
+  fontSans?: string;
+  fontMono?: string;
+  fontSerif?: string;
+  fontSizePx?: number;
+  lineHeight?: number;
+  contentMaxPx?: number;
+  serifBody?: boolean;
+}
 
 export type FocusMode = "normal" | "focus" | "zen";
+
+export type ReadingOverlay = "off" | "night" | "sepia" | "dim" | "high-contrast";

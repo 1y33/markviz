@@ -16,6 +16,7 @@ export interface ServerOptions {
 
 const MD_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".bmp", ".ico"]);
+const PDF_EXTENSIONS = new Set([".pdf"]);
 const TEXT_LIKE_EXTENSIONS = new Set([
   ".txt", ".log", ".csv", ".tsv", ".json", ".yaml", ".yml", ".toml", ".ini",
   ".conf", ".cfg",
@@ -50,7 +51,7 @@ const IGNORED_DIRS = new Set([
   "target",
 ]);
 
-type FileKind = "markdown" | "image" | "text" | "binary";
+type FileKind = "markdown" | "image" | "text" | "pdf" | "binary";
 
 interface TreeNode {
   name: string;
@@ -66,6 +67,7 @@ function classify(name: string): FileKind {
   const base = path.basename(name).toLowerCase();
   if (MD_EXTENSIONS.has(ext)) return "markdown";
   if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (PDF_EXTENSIONS.has(ext)) return "pdf";
   if (TEXT_LIKE_EXTENSIONS.has(ext)) return "text";
   if (!ext && /^(readme|license|dockerfile|makefile|changelog|notice|authors|contributing)$/i.test(base)) return "text";
   return "binary";
@@ -376,18 +378,44 @@ export async function startServer(opts: ServerOptions): Promise<{ url: string; c
     return out;
   }
 
+  async function listLinkable(): Promise<{ md: string[]; pdf: string[] }> {
+    const md: string[] = [];
+    const pdf: string[] = [];
+    async function walk(dir: string) {
+      let entries;
+      try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (e.name.startsWith(".")) continue;
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          if (IGNORED_DIRS.has(e.name)) continue;
+          await walk(p);
+        } else if (e.isFile()) {
+          const ext = path.extname(e.name).toLowerCase();
+          if (MD_EXTENSIONS.has(ext)) md.push(path.relative(root, p));
+          else if (PDF_EXTENSIONS.has(ext)) pdf.push(path.relative(root, p));
+        }
+      }
+    }
+    await walk(root);
+    return { md, pdf };
+  }
+
   app.get("/api/index", async () => {
-    const files = await listMarkdown();
+    const { md, pdf } = await listLinkable();
+    // Markdown wins on basename collision so notes shadow same-named PDFs.
+    const files = [...md, ...pdf];
     const byBasename: Record<string, string[]> = {};
-    for (const f of files) {
+    const add = (f: string) => {
       const base = path.basename(f, path.extname(f));
       (byBasename[base] ||= []).push(f);
-      // Also map without spaces / with hyphens — common Obsidian aliases.
       const slug = base.toLowerCase().replace(/\s+/g, "-");
       if (slug !== base.toLowerCase()) {
         (byBasename[slug] ||= []).push(f);
       }
-    }
+    };
+    for (const f of md) add(f);
+    for (const f of pdf) add(f);
     return { files, byBasename };
   });
 
@@ -535,14 +563,14 @@ export async function startServer(opts: ServerOptions): Promise<{ url: string; c
     try {
       const stat = await fs.stat(abs);
       const kind = classify(abs);
-      if (kind === "image" || kind === "binary") {
+      if (kind === "image" || kind === "pdf" || kind === "binary") {
         return {
           path: rel,
           kind,
           content: null,
           mtime: stat.mtimeMs,
           size: stat.size,
-          url: `/raw/${rel}`,
+          url: `/raw/${encodeURI(rel)}`,
         };
       }
       const content = await fs.readFile(abs, "utf8");
@@ -581,6 +609,121 @@ export async function startServer(opts: ServerOptions): Promise<{ url: string; c
       return { ok: true, mtime: stat.mtimeMs, size: stat.size };
     } catch (err: unknown) {
       reply.code(500);
+      return { error: (err as Error).message };
+    }
+  });
+
+  // === arXiv integration ===
+  // Accepts an arxiv id (e.g. "2305.12345", "2305.12345v2", or a full URL) and
+  // returns a normalized id without the version suffix and the version (if any).
+  function parseArxivId(input: string): { id: string; version: string | null } | null {
+    const s = input.trim();
+    // Full URLs: arxiv.org/abs/<id>, arxiv.org/pdf/<id>(.pdf)?, export.arxiv.org/...
+    const urlMatch = /arxiv\.org\/(?:abs|pdf)\/([^?#\s]+?)(?:\.pdf)?(?:[?#].*)?$/i.exec(s);
+    const raw = urlMatch ? urlMatch[1] : s;
+    // New-style: 2305.12345 (4 digits . 4-5 digits) optional v\d+
+    const newStyle = /^(\d{4}\.\d{4,5})(v\d+)?$/i.exec(raw);
+    if (newStyle) return { id: newStyle[1], version: newStyle[2] ?? null };
+    // Old-style: math/0211159, hep-th/9901001 etc.
+    const oldStyle = /^([a-z-]+(?:\.[A-Z]{2})?\/\d{7})(v\d+)?$/i.exec(raw);
+    if (oldStyle) return { id: oldStyle[1], version: oldStyle[2] ?? null };
+    return null;
+  }
+
+  // Stream a PDF from arxiv.org through the server so the browser sidesteps CORS.
+  app.get<{ Querystring: { id?: string } }>("/api/arxiv/proxy", async (req, reply) => {
+    const parsed = req.query.id ? parseArxivId(req.query.id) : null;
+    if (!parsed) {
+      reply.code(400);
+      return { error: "missing or invalid arxiv id" };
+    }
+    const versioned = parsed.version ? `${parsed.id}${parsed.version}` : parsed.id;
+    const url = `https://arxiv.org/pdf/${versioned}.pdf`;
+    try {
+      const upstream = await fetch(url, { redirect: "follow" });
+      if (!upstream.ok || !upstream.body) {
+        reply.code(upstream.status || 502);
+        return { error: `arxiv returned ${upstream.status}` };
+      }
+      reply.header("Content-Type", "application/pdf");
+      reply.header("Cache-Control", "public, max-age=3600");
+      reply.header("Content-Disposition", `inline; filename="arxiv-${versioned}.pdf"`);
+      return reply.send(upstream.body);
+    } catch (err: unknown) {
+      reply.code(502);
+      return { error: (err as Error).message };
+    }
+  });
+
+  // Fetch arxiv metadata (title, authors, summary) via the public API.
+  app.get<{ Querystring: { id?: string } }>("/api/arxiv/meta", async (req, reply) => {
+    const parsed = req.query.id ? parseArxivId(req.query.id) : null;
+    if (!parsed) {
+      reply.code(400);
+      return { error: "missing or invalid arxiv id" };
+    }
+    try {
+      const res = await fetch(`https://export.arxiv.org/api/query?id_list=${parsed.id}`);
+      const xml = await res.text();
+      // Lightweight extraction — we don't need a real XML parser for these fields.
+      const titleMatch = /<entry[\s\S]*?<title>([\s\S]*?)<\/title>/.exec(xml);
+      const summaryMatch = /<entry[\s\S]*?<summary>([\s\S]*?)<\/summary>/.exec(xml);
+      const authors = Array.from(xml.matchAll(/<author>\s*<name>([\s\S]*?)<\/name>/g)).map((m) => m[1].trim());
+      const publishedMatch = /<entry[\s\S]*?<published>([\s\S]*?)<\/published>/.exec(xml);
+      return {
+        id: parsed.id,
+        version: parsed.version,
+        title: titleMatch ? titleMatch[1].trim().replace(/\s+/g, " ") : null,
+        summary: summaryMatch ? summaryMatch[1].trim().replace(/\s+/g, " ") : null,
+        authors,
+        published: publishedMatch ? publishedMatch[1].trim() : null,
+        pdfUrl: `https://arxiv.org/pdf/${parsed.version ? parsed.id + parsed.version : parsed.id}.pdf`,
+        absUrl: `https://arxiv.org/abs/${parsed.version ? parsed.id + parsed.version : parsed.id}`,
+      };
+    } catch (err: unknown) {
+      reply.code(502);
+      return { error: (err as Error).message };
+    }
+  });
+
+  // Download the arxiv PDF and save it into the root so it shows up in the tree.
+  app.post<{ Body: { id?: string; subdir?: string; filename?: string } }>("/api/arxiv/import", async (req, reply) => {
+    const parsed = req.body?.id ? parseArxivId(req.body.id) : null;
+    if (!parsed) {
+      reply.code(400);
+      return { error: "missing or invalid arxiv id" };
+    }
+    const versioned = parsed.version ? `${parsed.id}${parsed.version}` : parsed.id;
+    // Sanitize subdir/filename — only allow safe characters and forbid traversal.
+    const subdirRaw = (req.body?.subdir ?? "papers").replace(/[^a-zA-Z0-9._/-]/g, "").replace(/^\/+|\/+$/g, "");
+    const fnameSafe = (req.body?.filename ?? `arxiv-${versioned.replace(/\//g, "_")}.pdf`)
+      .replace(/[^a-zA-Z0-9._-]/g, "_");
+    const finalName = fnameSafe.endsWith(".pdf") ? fnameSafe : `${fnameSafe}.pdf`;
+    const relPath = path.posix.join(subdirRaw || ".", finalName);
+    const abs = safeResolve(root, relPath);
+    if (!abs) {
+      reply.code(403);
+      return { error: "path outside root" };
+    }
+    try {
+      await fs.mkdir(path.dirname(abs), { recursive: true });
+      const url = `https://arxiv.org/pdf/${versioned}.pdf`;
+      const upstream = await fetch(url, { redirect: "follow" });
+      if (!upstream.ok || !upstream.body) {
+        reply.code(upstream.status || 502);
+        return { error: `arxiv returned ${upstream.status}` };
+      }
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      await fs.writeFile(abs, buf);
+      return {
+        ok: true,
+        path: path.relative(root, abs),
+        size: buf.length,
+        id: parsed.id,
+        version: parsed.version,
+      };
+    } catch (err: unknown) {
+      reply.code(502);
       return { error: (err as Error).message };
     }
   });

@@ -17,8 +17,12 @@ import {
   IconFolderOpen,
   IconHash,
   IconPrint,
+  IconDownload,
+  IconSplit,
+  IconSwap,
+  IconReadingMode,
 } from "./icons";
-import type { FocusMode, Theme } from "./types";
+import type { FocusMode, ReadingOverlay, SavedTheme, Theme } from "./types";
 
 interface Props {
   sidebarOpen: boolean;
@@ -46,15 +50,29 @@ interface Props {
   onOpenGraph: () => void;
   onPrint: () => void;
   onHelp: () => void;
+  onArxivImport: () => void;
+  onCustomizeTheme: () => void;
+  savedThemes: Record<string, SavedTheme>;
+  onDeleteSavedTheme: (name: string) => void;
+  splitOpen: boolean;
+  onToggleSplit: () => void;
+  onSwapPanes: () => void;
+  overlay: ReadingOverlay;
+  onSetOverlay: (o: ReadingOverlay) => void;
 }
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: "dark", label: "Dark" },
   { value: "light", label: "Light" },
+  { value: "github-light", label: "GitHub Light" },
   { value: "sepia", label: "Sepia" },
-  { value: "nord", label: "Nord" },
   { value: "solarized", label: "Solarized" },
+  { value: "nord", label: "Nord" },
   { value: "dracula", label: "Dracula" },
+  { value: "gruvbox-dark", label: "Gruvbox Dark" },
+  { value: "tokyo-night", label: "Tokyo Night" },
+  { value: "catppuccin-mocha", label: "Catppuccin Mocha" },
+  { value: "rose-pine", label: "Rosé Pine" },
 ];
 
 const FOCUS_LABELS: Record<FocusMode, string> = {
@@ -98,10 +116,21 @@ function useHoldRepeat(action: () => void, delay = 350, interval = 60) {
   };
 }
 
+const OVERLAYS: { value: ReadingOverlay; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "night", label: "Night (warm)" },
+  { value: "sepia", label: "Sepia tint" },
+  { value: "dim", label: "Dim" },
+  { value: "high-contrast", label: "High contrast" },
+];
+
 export function Topbar(props: Props) {
   const [themeOpen, setThemeOpen] = useState(false);
   const themeRef = useRef<HTMLDivElement>(null);
   useOutsideClick(themeRef, () => setThemeOpen(false));
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useOutsideClick(overlayRef, () => setOverlayOpen(false));
 
   const zoomInHold = useHoldRepeat(props.onZoomIn);
   const zoomOutHold = useHoldRepeat(props.onZoomOut);
@@ -129,6 +158,24 @@ export function Topbar(props: Props) {
         >
           <IconMap size={15} />
         </button>
+        <button
+          className={`iconbtn ${props.splitOpen ? "is-active" : ""}`}
+          onClick={props.onToggleSplit}
+          title="Toggle split view (Ctrl+\\)"
+          aria-label="Toggle split view"
+        >
+          <IconSplit size={15} />
+        </button>
+        {props.splitOpen && (
+          <button
+            className="iconbtn"
+            onClick={props.onSwapPanes}
+            title="Swap panes"
+            aria-label="Swap panes"
+          >
+            <IconSwap size={15} />
+          </button>
+        )}
       </div>
 
       <button
@@ -225,7 +272,11 @@ export function Topbar(props: Props) {
           aria-expanded={themeOpen}
         >
           <IconPalette size={15} />
-          <span className="btn-label">{THEMES.find((t) => t.value === props.theme)?.label}</span>
+          <span className="btn-label">{
+            typeof props.theme === "string" && props.theme.startsWith("custom:")
+              ? props.theme.slice("custom:".length)
+              : THEMES.find((t) => t.value === props.theme)?.label
+          }</span>
           <IconChevronDown size={12} />
         </button>
         {themeOpen && (
@@ -245,6 +296,89 @@ export function Topbar(props: Props) {
                 <span>{t.label}</span>
               </button>
             ))}
+            {Object.values(props.savedThemes).length > 0 && (
+              <>
+                <div className="dropdown-divider" />
+                <div className="dropdown-section">My themes</div>
+                {Object.values(props.savedThemes).map((st) => {
+                  const id = `custom:${st.name}` as Theme;
+                  return (
+                    <div
+                      key={st.name}
+                      className={`dropdown-item saved-theme-row ${props.theme === id ? "is-selected" : ""}`}
+                    >
+                      <button
+                        className="saved-theme-pick"
+                        onClick={() => {
+                          props.onSetTheme(id);
+                          setThemeOpen(false);
+                        }}
+                      >
+                        <span
+                          className="theme-swatch"
+                          style={{ background: st.customization.accent ?? "var(--accent)" }}
+                        />
+                        <span>{st.name}</span>
+                      </button>
+                      <button
+                        className="saved-theme-delete"
+                        title="Delete this theme"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onDeleteSavedTheme(st.name);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            <div className="dropdown-divider" />
+            <button
+              className="dropdown-item"
+              onClick={() => {
+                props.onCustomizeTheme();
+                setThemeOpen(false);
+              }}
+            >
+              <span className="theme-swatch swatch-custom" />
+              <span>Customize…</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="dropdown" ref={overlayRef}>
+        <button
+          className={`iconbtn ${props.overlay !== "off" ? "is-active" : ""}`}
+          onClick={() => setOverlayOpen((v) => !v)}
+          title="Reading overlay (night / sepia / dim)"
+          aria-haspopup="menu"
+          aria-expanded={overlayOpen}
+        >
+          <IconReadingMode size={15} />
+          <span className="btn-label">{OVERLAYS.find((o) => o.value === props.overlay)?.label}</span>
+          <IconChevronDown size={12} />
+        </button>
+        {overlayOpen && (
+          <div className="dropdown-menu" role="menu">
+            {OVERLAYS.map((o) => (
+              <button
+                key={o.value}
+                role="menuitemradio"
+                aria-checked={props.overlay === o.value}
+                className={`dropdown-item ${props.overlay === o.value ? "is-selected" : ""}`}
+                onClick={() => {
+                  props.onSetOverlay(o.value);
+                  setOverlayOpen(false);
+                }}
+              >
+                <span className={`overlay-swatch overlay-swatch-${o.value}`} />
+                <span>{o.label}</span>
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -261,6 +395,10 @@ export function Topbar(props: Props) {
 
       <button className="iconbtn ghost" onClick={props.onOpenGraph} title="Knowledge graph (g)">
         <IconHash size={15} />
+      </button>
+
+      <button className="iconbtn ghost" onClick={props.onArxivImport} title="Import arXiv paper (a)">
+        <IconDownload size={15} />
       </button>
 
       <button className="iconbtn ghost" onClick={props.onPrint} title="Print / save as PDF (Ctrl+Shift+P)">

@@ -1,5 +1,6 @@
 import { MarkdownView } from "./MarkdownView";
 import { CodeBlock } from "./CodeBlock";
+import { PdfView } from "./PdfView";
 import type { FileKind } from "./types";
 
 interface Props {
@@ -10,6 +11,10 @@ interface Props {
   theme: "dark" | "light";
   zoom: number;
   wikiResolver?: (target: string) => string | null;
+  pdfInitialPage?: number;
+  pdfSiblingNoteState?: "exists" | "missing" | "unknown";
+  onOpenPdfSiblingNote?: () => void;
+  onPdfPageChange?: (page: number) => void;
 }
 
 function langFromPath(p: string): string {
@@ -102,7 +107,19 @@ function langFromPath(p: string): string {
   return map[ext] ?? "text";
 }
 
-export function FileView({ path, kind, content, url, theme, zoom, wikiResolver }: Props) {
+export function FileView({
+  path,
+  kind,
+  content,
+  url,
+  theme,
+  zoom,
+  wikiResolver,
+  pdfInitialPage,
+  pdfSiblingNoteState,
+  onOpenPdfSiblingNote,
+  onPdfPageChange,
+}: Props) {
   const zoomStyle = { fontSize: `${zoom}em` } as React.CSSProperties;
 
   if (kind === "markdown") {
@@ -115,6 +132,21 @@ export function FileView({ path, kind, content, url, theme, zoom, wikiResolver }
         <img src={url ?? `/raw/${path}`} alt={path} />
         <div className="image-caption">{path}</div>
       </div>
+    );
+  }
+
+  if (kind === "pdf") {
+    return (
+      <PdfView
+        src={url ?? `/raw/${encodeURI(path)}`}
+        filePath={path}
+        theme={theme}
+        zoom={zoom}
+        initialPage={pdfInitialPage}
+        onOpenSiblingNote={onOpenPdfSiblingNote}
+        siblingNoteState={pdfSiblingNoteState}
+        onPageChange={onPdfPageChange}
+      />
     );
   }
 

@@ -158,12 +158,16 @@ export function MarkdownView({ content, theme, filePath, zoom = 1, wikiResolver,
             </a>
           );
         }
-        // Relative links - try to navigate to that markdown file via app state.
+        // Relative links - try to navigate to that markdown / PDF file via app state.
         return (
           <a
             href={href}
             onClick={(e) => {
-              if (href && (href.endsWith(".md") || href.endsWith(".markdown") || href.endsWith(".mdx"))) {
+              if (!href) return;
+              const noHash = href.split("#")[0].toLowerCase();
+              const isNote = noHash.endsWith(".md") || noHash.endsWith(".markdown") || noHash.endsWith(".mdx");
+              const isPdf = noHash.endsWith(".pdf");
+              if (isNote || isPdf) {
                 e.preventDefault();
                 const event = new CustomEvent("markviz:navigate", { detail: { href, from: filePath } });
                 window.dispatchEvent(event);

@@ -25,6 +25,7 @@ interface Props {
   theme: "dark" | "light";
   zoom: number;
   wikiResolver?: (target: string) => string | null;
+  wikiFiles?: string[];
   // Lifecycle hooks back to App.
   onFocus: () => void;
   onPathChange: (path: string | null) => void;
@@ -44,6 +45,7 @@ export function Pane({
   theme,
   zoom,
   wikiResolver,
+  wikiFiles,
   onFocus,
   onPathChange,
   onClose,
@@ -144,6 +146,7 @@ export function Pane({
             zoom={zoom}
             onSave={onSave}
             onCancel={() => setEditing(false)}
+            wikiFiles={wikiFiles}
           />
         )}
         {!loading && !error && path && !editing && (

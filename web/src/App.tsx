@@ -953,6 +953,7 @@ A:
                   zoom={zoom}
                   onSave={onSave}
                   onCancel={() => setEditing(false)}
+                  wikiFiles={index?.files}
                 />
               )}
               {!loading && !error && currentPath && !editing && (
@@ -1033,6 +1034,7 @@ A:
               theme={codeTheme}
               zoom={zoom}
               wikiResolver={wikiResolver}
+              wikiFiles={index?.files}
               onFocus={() => setActivePane("right")}
               onPathChange={(p) => setRightPath(p)}
               onClose={() => {

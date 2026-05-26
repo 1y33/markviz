@@ -1988,6 +1988,190 @@ html[data-theme="dracula"] .pdf-page {
 }
 .arxiv-actions button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .arxiv-actions button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* === arXiv bulk import === */
+.arxiv-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.arxiv-tab {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 120ms, border-color 120ms;
+}
+.arxiv-tab:hover { color: var(--text-dim); }
+.arxiv-tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.arxiv-bulk-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+.arxiv-bulk-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.arxiv-bulk-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+.arxiv-bulk-folder { flex: 1; }
+.arxiv-bulk-controls button.primary {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.arxiv-bulk-list {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+}
+.arxiv-bulk-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.arxiv-bulk-toggle-all {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.arxiv-bulk-toggle-all:hover { text-decoration: underline; }
+.arxiv-bulk-rows {
+  flex: 1;
+  overflow-y: auto;
+}
+.arxiv-bulk-row {
+  display: grid;
+  grid-template-columns: 24px 1fr 24px;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12.5px;
+  transition: background 120ms;
+}
+.arxiv-bulk-row:last-child { border-bottom: none; }
+.arxiv-bulk-row.status-done { background: color-mix(in srgb, var(--read) 8%, transparent); }
+.arxiv-bulk-row.status-failed { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.arxiv-bulk-row input[type="checkbox"] {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.arxiv-bulk-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.arxiv-bulk-row-title {
+  font-weight: 500;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.arxiv-bulk-rawid {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.arxiv-bulk-row-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.arxiv-bulk-row-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+.arxiv-bulk-row-ok {
+  font-size: 11px;
+  color: var(--read);
+}
+.arxiv-bulk-filename {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 4px 8px;
+  margin-top: 2px;
+}
+.arxiv-bulk-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 2px;
+  color: var(--text-muted);
+}
+.arxiv-bulk-done { color: var(--read); font-weight: 700; }
+.arxiv-bulk-failed { color: var(--danger); font-weight: 700; font-size: 18px; line-height: 1; }
+.arxiv-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 12px;
+}
+.arxiv-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-elev2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.arxiv-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 220ms ease;
+}
+.arxiv-progress-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 1s linear infinite; display: inline-block; }
 
@@ -2288,6 +2472,77 @@ html[data-theme="dracula"] .pdf-page {
   color: var(--text-muted);
   font-size: 11.5px;
   margin: 0 12px;
+}
+
+/* === Wikilink autocomplete popover === */
+.wiki-autocomplete {
+  position: fixed;
+  z-index: 200;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  width: 320px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  font-size: 12.5px;
+  animation: fadeIn 80ms ease-out;
+}
+.wiki-autocomplete.is-empty {
+  width: 280px;
+}
+.wiki-ac-empty {
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.wiki-ac-row {
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  transition: background 80ms;
+}
+.wiki-ac-row.is-active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.wiki-ac-kind {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-align: center;
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: .05em;
+  font-weight: 600;
+}
+.wiki-ac-kind.is-md { background: var(--accent-soft); color: var(--accent); }
+.wiki-ac-kind.is-pdf { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.wiki-ac-name {
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wiki-ac-path {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
 }
 .theme-studio-hint {
   margin: 4px 0 14px;

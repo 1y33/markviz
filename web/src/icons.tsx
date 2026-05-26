@@ -177,6 +177,32 @@ export const IconPrint = (p: IconProps) => (
     <rect x="6" y="14" width="12" height="8" />
   </Icon>
 );
+export const IconSplit = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="8" height="16" rx="1" />
+    <rect x="13" y="4" width="8" height="16" rx="1" />
+  </Icon>
+);
+export const IconSwap = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M7 7h13M16 3l4 4-4 4" />
+    <path d="M17 17H4M8 13l-4 4 4 4" />
+  </Icon>
+);
+export const IconDownload = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+    <path d="M7 10l5 5 5-5M12 15V3" />
+  </Icon>
+);
+export const IconFilePdf = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+    <path d="M14 2v6h6" />
+    <path d="M9 14h1a1.5 1.5 0 010 3H9v-3zM9 17v2" />
+    <path d="M13 14h1.5a1.5 1.5 0 011.5 1.5v0a1.5 1.5 0 01-1.5 1.5H13v-3z" />
+  </Icon>
+);
 export const IconRefresh = (p: IconProps) => (
   <Icon {...p}>
     <path d="M23 4v6h-6M1 20v-6h6" />

@@ -11,6 +11,7 @@ import {
   IconFile,
   IconImage,
   IconCode,
+  IconFilePdf,
   IconBookmark,
   IconBookmarkFilled,
 } from "./icons";
@@ -19,8 +20,10 @@ interface Props {
   tree: TreeNode[];
   rootName: string;
   currentPath: string | null;
+  rightPath?: string | null;
   readPaths: Set<string>;
   onSelect: (path: string) => void;
+  onOpenInRightPane?: (path: string) => void;
   onToggleRead: (path: string) => void;
 }
 
@@ -62,6 +65,8 @@ function fileIcon(kind: TreeNode["kind"]) {
       return <IconImage size={14} />;
     case "text":
       return <IconCode size={14} />;
+    case "pdf":
+      return <IconFilePdf size={14} />;
     default:
       return <IconFile size={14} />;
   }
@@ -71,36 +76,47 @@ function TreeView({
   nodes,
   depth,
   currentPath,
+  rightPath,
   readPaths,
   expanded,
   onToggleExpand,
   onSelect,
+  onOpenInRightPane,
   onToggleRead,
 }: {
   nodes: TreeNode[];
   depth: number;
   currentPath: string | null;
+  rightPath?: string | null;
   readPaths: Set<string>;
   expanded: Set<string>;
   onToggleExpand: (p: string) => void;
   onSelect: (p: string) => void;
+  onOpenInRightPane?: (p: string) => void;
   onToggleRead: (p: string) => void;
 }) {
   return (
     <ul className="tree" role="tree">
       {nodes.map((n) => {
         const isOpen = expanded.has(n.path);
-        const isActive = n.type === "file" && n.path === currentPath;
+        const isLeftActive = n.type === "file" && n.path === currentPath;
+        const isRightActive = n.type === "file" && n.path === rightPath;
+        const isActive = isLeftActive || isRightActive;
         const isRead = readPaths.has(n.path);
         return (
           <li key={n.path} role="treeitem" aria-expanded={n.type === "dir" ? isOpen : undefined}>
             <div
               className={`tree-row ${isActive ? "active" : ""} ${isRead && n.type === "file" ? "read" : ""}`}
               style={{ paddingLeft: depth * 12 + 8 }}
-              onClick={() => {
+              onClick={(e) => {
                 if (n.type === "dir") onToggleExpand(n.path);
-                else onSelect(n.path);
+                else if (n.type === "file") {
+                  // alt-click (or ⌘-click on mac) → right pane.
+                  if ((e.altKey || e.metaKey) && onOpenInRightPane) onOpenInRightPane(n.path);
+                  else onSelect(n.path);
+                }
               }}
+              title={n.type === "file" ? `${n.path}\n(alt-click → open in right pane)` : n.path}
             >
               <span className="caret">
                 {n.type === "dir" ? (isOpen ? <IconCaretDown size={12} /> : <IconCaretRight size={12} />) : null}
@@ -114,7 +130,21 @@ function TreeView({
               </span>
               <span className="label" title={n.path}>
                 {n.name}
+                {isLeftActive && <span className="pane-marker pane-marker-l">L</span>}
+                {isRightActive && <span className="pane-marker pane-marker-r">R</span>}
               </span>
+              {n.type === "file" && onOpenInRightPane && (
+                <button
+                  className="open-right"
+                  title="Open in right pane"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenInRightPane(n.path);
+                  }}
+                >
+                  ⇥
+                </button>
+              )}
               {n.type === "file" && (
                 <button
                   className={`mark-read ${isRead ? "is-read" : ""}`}
@@ -133,10 +163,12 @@ function TreeView({
                 nodes={n.children}
                 depth={depth + 1}
                 currentPath={currentPath}
+                rightPath={rightPath}
                 readPaths={readPaths}
                 expanded={expanded}
                 onToggleExpand={onToggleExpand}
                 onSelect={onSelect}
+                onOpenInRightPane={onOpenInRightPane}
                 onToggleRead={onToggleRead}
               />
             )}
@@ -148,7 +180,7 @@ function TreeView({
 }
 
 export function Sidebar(props: Props) {
-  const { tree, rootName, currentPath, readPaths, onSelect, onToggleRead } = props;
+  const { tree, rootName, currentPath, rightPath, readPaths, onSelect, onOpenInRightPane, onToggleRead } = props;
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
@@ -248,10 +280,12 @@ export function Sidebar(props: Props) {
             nodes={filtered}
             depth={0}
             currentPath={currentPath}
+            rightPath={rightPath}
             readPaths={readPaths}
             expanded={effectiveExpanded}
             onToggleExpand={toggleExpand}
             onSelect={onSelect}
+            onOpenInRightPane={onOpenInRightPane}
             onToggleRead={onToggleRead}
           />
         )}

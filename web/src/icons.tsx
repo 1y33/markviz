@@ -177,6 +177,17 @@ export const IconPrint = (p: IconProps) => (
     <rect x="6" y="14" width="12" height="8" />
   </Icon>
 );
+export const IconBookmarks = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M19 3H8a2 2 0 00-2 2v16l6-3 6 3V5a2 2 0 00-1-2z" />
+  </Icon>
+);
+export const IconCalendar = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="18" height="18" rx="2" />
+    <path d="M16 2v4M8 2v4M3 10h18" />
+  </Icon>
+);
 export const IconReadingMode = (p: IconProps) => (
   <Icon {...p}>
     <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />

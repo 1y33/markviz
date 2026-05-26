@@ -74,3 +74,37 @@ export interface GraphData {
   edges: Array<{ from: string; to: string; kind: "wiki" | "md" }>;
 }
 export async function fetchGraph(): Promise<GraphData> { return jsonFetch<GraphData>("/api/graph"); }
+
+export interface SavedSession {
+  name: string;
+  leftPath: string | null;
+  rightPath: string | null;
+  splitOpen: boolean;
+  splitRatio: number;
+  activePane: "left" | "right";
+  savedAt: number;
+}
+
+export interface SessionsFile { sessions: Record<string, SavedSession> }
+
+export async function fetchSessions(): Promise<SessionsFile> {
+  return jsonFetch<SessionsFile>("/api/sessions");
+}
+export async function saveSessions(data: SessionsFile): Promise<{ ok: boolean }> {
+  return jsonFetch<{ ok: boolean }>("/api/sessions", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchDailyTemplate(): Promise<{ template: string | null }> {
+  return jsonFetch<{ template: string | null }>("/api/daily-template");
+}
+export async function saveDailyTemplate(template: string): Promise<{ ok: boolean }> {
+  return jsonFetch<{ ok: boolean }>("/api/daily-template", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ template }),
+  });
+}

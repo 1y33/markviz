@@ -4,6 +4,7 @@ import { Editor } from "./Editor";
 import { FlashcardsBadge } from "./Flashcards";
 import { TabBar } from "./TabBar";
 import { fetchFile, saveFile } from "./api";
+import { IconEdit, IconEye } from "./icons";
 import type { FileKind } from "./types";
 
 export interface PaneSnapshot {
@@ -86,6 +87,7 @@ export function Pane({
   }, [path]);
 
   const sibling = path && kind === "pdf" ? resolveSiblingNote(path) : null;
+  const canEdit = !!path && (kind === "markdown" || kind === "text");
 
   const onSave = async (newContent: string) => {
     if (!path) return;
@@ -110,6 +112,16 @@ export function Pane({
         onClose={onCloseTab}
         onReorder={onReorderTabs}
         onClosePane={onClosePane}
+        trailing={canEdit ? (
+          <button
+            className={`tab-action-btn ${editing ? "is-active" : ""}`}
+            onClick={() => setEditing((e) => !e)}
+            title={editing ? "View (Ctrl+E)" : "Edit (Ctrl+E)"}
+          >
+            {editing ? <IconEye size={13} /> : <IconEdit size={13} />}
+            <span>{editing ? "View" : "Edit"}</span>
+          </button>
+        ) : null}
       />
       <div className="pane-body">
         {error && <div className="error">{error}</div>}

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { IconClose } from "./icons";
 
 interface Props {
@@ -11,6 +11,9 @@ interface Props {
   onReorder: (from: number, to: number) => void;
   // Optional close-pane button for the right pane.
   onClosePane?: () => void;
+  // Optional buttons rendered at the right side of the tab bar (e.g. an Edit
+  // toggle for the active tab, a settings menu, etc).
+  trailing?: ReactNode;
 }
 
 function basenameOf(p: string): string {
@@ -36,7 +39,7 @@ function disambiguate(tabs: string[]): Map<string, string> {
   return labels;
 }
 
-export function TabBar({ side, tabs, activeTab, onActivate, onClose, onReorder, onClosePane }: Props) {
+export function TabBar({ side, tabs, activeTab, onActivate, onClose, onReorder, onClosePane, trailing }: Props) {
   const labels = disambiguate(tabs);
   const dragFromRef = useRef<number | null>(null);
 
@@ -44,6 +47,7 @@ export function TabBar({ side, tabs, activeTab, onActivate, onClose, onReorder, 
     return (
       <div className={`tabbar tabbar-${side} is-empty`}>
         <span className="tabbar-empty">No files open in this pane.</span>
+        {trailing && <div className="tabbar-trailing">{trailing}</div>}
         {onClosePane && (
           <button className="tabbar-close-pane" onClick={onClosePane} title="Close pane">
             <IconClose size={12} />
@@ -96,6 +100,7 @@ export function TabBar({ side, tabs, activeTab, onActivate, onClose, onReorder, 
           );
         })}
       </div>
+      {trailing && <div className="tabbar-trailing">{trailing}</div>}
       {onClosePane && (
         <button className="tabbar-close-pane" onClick={onClosePane} title="Close pane">
           <IconClose size={12} />

@@ -994,6 +994,16 @@ A:
               onActivate={(p) => setCurrentPath(p)}
               onClose={closeLeftTab}
               onReorder={(from, to) => reorderTabs("left", from, to)}
+              trailing={canEdit ? (
+                <button
+                  className={`tab-action-btn ${editing ? "is-active" : ""}`}
+                  onClick={() => setEditing((v) => !v)}
+                  title={editing ? "View (Ctrl+E)" : "Edit (Ctrl+E)"}
+                >
+                  {editing ? <IconEye size={13} /> : <IconEdit size={13} />}
+                  <span>{editing ? "View" : "Edit"}</span>
+                </button>
+              ) : null}
             />
             <div className="pane-body">
               {error && <div className="error">{error}</div>}

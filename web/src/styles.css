@@ -987,6 +987,40 @@ html[data-overlay="high-contrast"] .topbar { filter: contrast(1.08); }
   align-items: center;
 }
 .tabbar-close-pane:hover { color: var(--danger); background: var(--bg-elev2); }
+.tabbar-trailing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 8px;
+  border-left: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.tab-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.tab-action-btn:hover {
+  background: var(--bg-elev2);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.tab-action-btn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
 .sessions-tabcount {
   font-family: var(--font-mono);
   font-size: 9.5px;

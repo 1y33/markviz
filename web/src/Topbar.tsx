@@ -21,6 +21,8 @@ import {
   IconSplit,
   IconSwap,
   IconReadingMode,
+  IconBookmarks,
+  IconCalendar,
 } from "./icons";
 import type { FocusMode, ReadingOverlay, SavedTheme, Theme } from "./types";
 
@@ -59,6 +61,8 @@ interface Props {
   onSwapPanes: () => void;
   overlay: ReadingOverlay;
   onSetOverlay: (o: ReadingOverlay) => void;
+  onOpenSessions: () => void;
+  onOpenDaily: () => void;
 }
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -395,6 +399,14 @@ export function Topbar(props: Props) {
 
       <button className="iconbtn ghost" onClick={props.onOpenGraph} title="Knowledge graph (g)">
         <IconHash size={15} />
+      </button>
+
+      <button className="iconbtn ghost" onClick={props.onOpenDaily} title="Open today's daily note (Ctrl+Shift+D)">
+        <IconCalendar size={15} />
+      </button>
+
+      <button className="iconbtn ghost" onClick={props.onOpenSessions} title="Sessions / bookmarks">
+        <IconBookmarks size={15} />
       </button>
 
       <button className="iconbtn ghost" onClick={props.onArxivImport} title="Import arXiv paper (a)">

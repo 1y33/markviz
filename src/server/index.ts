@@ -439,6 +439,48 @@ export async function startServer(opts: ServerOptions): Promise<{ url: string; c
     }
   });
 
+  // Sessions — saved workspaces (open file + split layout) keyed by name.
+  const sessionsPath = () => path.join(root, ".markviz", "sessions.json");
+  app.get("/api/sessions", async () => {
+    try {
+      const raw = await fs.readFile(sessionsPath(), "utf8");
+      return JSON.parse(raw);
+    } catch {
+      return { sessions: {} };
+    }
+  });
+  app.put<{ Body: unknown }>("/api/sessions", async (req) => {
+    try {
+      await fs.mkdir(path.join(root, ".markviz"), { recursive: true });
+      await fs.writeFile(sessionsPath(), JSON.stringify(req.body ?? {}, null, 2), "utf8");
+      return { ok: true };
+    } catch (err: unknown) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+
+  // Daily-note template. If `.markviz/daily-template.md` exists the client
+  // uses its contents when creating a new daily note; otherwise the client
+  // falls back to a built-in default.
+  const dailyTemplatePath = () => path.join(root, ".markviz", "daily-template.md");
+  app.get("/api/daily-template", async () => {
+    try {
+      const raw = await fs.readFile(dailyTemplatePath(), "utf8");
+      return { template: raw };
+    } catch {
+      return { template: null };
+    }
+  });
+  app.put<{ Body: { template?: string } }>("/api/daily-template", async (req) => {
+    try {
+      await fs.mkdir(path.join(root, ".markviz"), { recursive: true });
+      await fs.writeFile(dailyTemplatePath(), String(req.body?.template ?? ""), "utf8");
+      return { ok: true };
+    } catch (err: unknown) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+
   // Full-text search across all markdown.
   app.get<{ Querystring: { q?: string; limit?: string } }>("/api/search", async (req) => {
     const q = (req.query.q ?? "").trim();

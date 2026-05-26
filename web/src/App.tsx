@@ -14,6 +14,8 @@ import { CommandPalette } from "./CommandPalette";
 import { ArxivImport } from "./ArxivImport";
 import { ThemeStudio } from "./ThemeStudio";
 import { Pane } from "./Pane";
+import { SessionsPanel } from "./SessionsPanel";
+import { DailyNotePrompt, DailyTemplateEditor, todayDailyPath } from "./Daily";
 import { IconEdit, IconEye } from "./icons";
 import { setStoragePrefix, lsGet, lsSet } from "./storage";
 import type { BuiltinTheme, FileKind, FocusMode, ReadingOverlay, RootInfo, SavedTheme, Theme, ThemeCustomization, TreeNode } from "./types";
@@ -159,6 +161,9 @@ export function App() {
   const [showArxiv, setShowArxiv] = useState(false);
   const [pdfInitialPage, setPdfInitialPage] = useState<number | null>(() => getInitialPageFromUrl());
   const [showThemeStudio, setShowThemeStudio] = useState(false);
+  const [showSessions, setShowSessions] = useState(false);
+  const [showDailyPrompt, setShowDailyPrompt] = useState(false);
+  const [showDailyTemplateEditor, setShowDailyTemplateEditor] = useState(false);
   const [themeCustom, setThemeCustom] = useState<Record<string, ThemeCustomization>>(
     () => lsGet<Record<string, ThemeCustomization>>("themeCustom", {}),
   );
@@ -631,6 +636,18 @@ A:
         window.print();
         return;
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        // Fast path: if today's note already exists, just open it. Otherwise
+        // show the prompt so the user can edit the template before creating.
+        const path = todayDailyPath();
+        if (index?.files.includes(path)) {
+          setCurrentPath(path);
+        } else {
+          setShowDailyPrompt(true);
+        }
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
         setSidebarOpen((s) => !s);
@@ -692,6 +709,9 @@ A:
         setShowPalette(false);
         setShowArxiv(false);
         setShowThemeStudio(false);
+        setShowSessions(false);
+        setShowDailyPrompt(false);
+        setShowDailyTemplateEditor(false);
       }
     };
     window.addEventListener("keydown", handler);
@@ -869,6 +889,12 @@ A:
           }}
           overlay={overlay}
           onSetOverlay={setOverlay}
+          onOpenSessions={() => setShowSessions(true)}
+          onOpenDaily={() => {
+            const path = todayDailyPath();
+            if (index?.files.includes(path)) setCurrentPath(path);
+            else setShowDailyPrompt(true);
+          }}
           splitOpen={splitOpen}
           onToggleSplit={() => {
             setSplitOpen((s) => {
@@ -1108,6 +1134,48 @@ A:
         />
       )}
 
+      {showSessions && (
+        <SessionsPanel
+          current={{
+            leftPath: currentPath,
+            rightPath,
+            splitOpen,
+            splitRatio,
+            activePane,
+          }}
+          onLoad={(s) => {
+            // Apply the saved snapshot. We do this in a single batch by
+            // setting state in dependency order; effects will pick up.
+            setCurrentPath(s.leftPath);
+            setRightPath(s.rightPath);
+            setSplitOpen(s.splitOpen);
+            setSplitRatio(s.splitRatio);
+            setActivePane(s.activePane);
+            setShowSessions(false);
+          }}
+          onClose={() => setShowSessions(false)}
+        />
+      )}
+
+      {showDailyPrompt && (
+        <DailyNotePrompt
+          onClose={() => setShowDailyPrompt(false)}
+          onEditTemplate={() => {
+            setShowDailyPrompt(false);
+            setShowDailyTemplateEditor(true);
+          }}
+          onOpen={async (p) => {
+            setShowDailyPrompt(false);
+            await reloadTree();
+            setCurrentPath(p);
+          }}
+        />
+      )}
+
+      {showDailyTemplateEditor && (
+        <DailyTemplateEditor onClose={() => setShowDailyTemplateEditor(false)} />
+      )}
+
       {showArxiv && (
         <ArxivImport
           defaultDir={currentPath && currentPath.includes("/")
@@ -1155,6 +1223,7 @@ A:
                 <tr><td><kbd>a</kbd></td><td>Import arXiv paper as PDF</td></tr>
                 <tr><td><kbd>Ctrl</kbd>+<kbd>\</kbd></td><td>Toggle split view (2 panes)</td></tr>
                 <tr><td>Alt-click in sidebar</td><td>Open file in the right pane</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></td><td>Open / create today's daily note</td></tr>
                 <tr><td><kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>Edit current file</td></tr>
                 <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save (in editor)</td></tr>
                 <tr><td><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> / <kbd>0</kbd></td><td>Zoom in / out / reset</td></tr>

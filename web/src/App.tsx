@@ -110,6 +110,11 @@ export function App() {
   const [showDailyTemplateEditor, setShowDailyTemplateEditor] = useState(false);
   const [showNewNote, setShowNewNote] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [pinnedPaths, setPinnedPaths] = useState<string[]>(() => lsGet<string[]>("pinnedPaths", []));
+  useEffect(() => { if (info) lsSet("pinnedPaths", pinnedPaths); }, [pinnedPaths, info]);
+  const togglePin = useCallback((p: string) => {
+    setPinnedPaths((arr) => (arr.includes(p) ? arr.filter((x) => x !== p) : [...arr, p]));
+  }, []);
   // Context menu state — { node, x, y } when open, null otherwise.
   const [ctxMenu, setCtxMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
   // FsPrompt state — single-input dialogs for rename / duplicate / mkdir.
@@ -902,6 +907,36 @@ A:
           }}
           onToggleRead={toggleRead}
           onContextMenu={(node, x, y) => setCtxMenu({ node, x, y })}
+          pinnedPaths={pinnedPaths}
+          onTogglePin={togglePin}
+          onMove={async (source, destDir) => {
+            const filename = source.split("/").pop() ?? source;
+            const target = destDir ? `${destDir}/${filename}` : filename;
+            if (target === source) return;
+            try {
+              await renameFile(source, target);
+              await reloadTree();
+              // Rewrite any open tabs and pinned paths that pointed at the
+              // moved file / its descendants.
+              const rewrite = (p: string) =>
+                p === source ? target
+                  : p.startsWith(source + "/") ? target + p.slice(source.length)
+                  : p;
+              setLeftTabs((tabs) => tabs.map(rewrite));
+              setRightTabs((tabs) => tabs.map(rewrite));
+              setPinnedPaths((arr) => arr.map(rewrite));
+              if (currentPath) {
+                const r = rewrite(currentPath);
+                if (r !== currentPath) setCurrentPath(r);
+              }
+              if (rightPath) {
+                const r = rewrite(rightPath);
+                if (r !== rightPath) setRightPath(r);
+              }
+            } catch (err: unknown) {
+              setError((err as Error).message);
+            }
+          }}
         />
       )}
       {reserveSidebar && (
@@ -1284,13 +1319,16 @@ A:
         const actions: ContextAction[] = [];
         if (isFile) {
           actions.push({ id: "open", label: "Open", onPick: () => setCurrentPath(node.path) });
-          if (splitOpen || true) {
-            actions.push({
-              id: "open-right",
-              label: "Open in right pane",
-              onPick: () => { setSplitOpen(true); setRightPath(node.path); setActivePane("right"); },
-            });
-          }
+          actions.push({
+            id: "open-right",
+            label: "Open in right pane",
+            onPick: () => { setSplitOpen(true); setRightPath(node.path); setActivePane("right"); },
+          });
+          actions.push({
+            id: "pin",
+            label: pinnedPaths.includes(node.path) ? "Unpin" : "Pin to top",
+            onPick: () => togglePin(node.path),
+          });
         } else {
           actions.push({
             id: "new-file-here",

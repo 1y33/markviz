@@ -518,6 +518,108 @@ kbd {
   border-radius: 2px;
 }
 .tree-row.read .label { color: var(--text-muted); }
+
+/* === Drag and drop in sidebar === */
+.tree-row.is-drag-source {
+  opacity: .4;
+  background: var(--bg-elev2);
+}
+.tree-row.is-drop-target {
+  background: var(--accent-soft) !important;
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  color: var(--text) !important;
+  animation: drop-pulse 1s ease-in-out infinite;
+}
+.tree-row.is-drop-flash {
+  animation: drop-success 600ms ease-out;
+}
+@keyframes drop-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50% { box-shadow: 0 0 0 4px var(--accent-soft); }
+}
+@keyframes drop-success {
+  0%   { background: var(--accent); color: white; transform: scale(1.02); }
+  60%  { background: var(--accent-soft); color: var(--accent); transform: scale(1); }
+  100% { background: transparent; color: var(--text-dim); }
+}
+/* Sidebar root header doubles as a drop zone for "move to root". */
+.sidebar-header.is-drop-target {
+  background: var(--accent-soft);
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+.sidebar-header.is-drop-flash { animation: drop-success 600ms ease-out; }
+/* Custom drag ghost: small floating pill near the cursor. */
+.drag-ghost {
+  position: absolute;
+  top: -1000px;
+  background: var(--bg-elev);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* === Pinned section === */
+.pinned-section {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 0 8px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent);
+}
+.pinned-title {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--text-muted);
+  padding: 4px 12px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pinned-title::before {
+  content: "📌";
+  font-size: 10px;
+}
+.pinned-list { list-style: none; margin: 0; padding: 0; }
+.pinned-row {
+  padding-left: 10px !important;
+  position: relative;
+}
+.pinned-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+.pinned-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 6px;
+  opacity: 0;
+  transition: opacity 100ms, color 100ms;
+}
+.tree-row:hover .pinned-remove { opacity: .7; }
+.pinned-remove:hover { color: var(--danger); opacity: 1; }
+@keyframes pin-flash {
+  0%   { background: var(--accent); color: white; }
+  100% { background: transparent; color: var(--text-dim); }
+}
 .tree-row .caret {
   width: 12px;
   display: inline-flex;

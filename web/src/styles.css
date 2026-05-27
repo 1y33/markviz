@@ -416,13 +416,54 @@ kbd {
   padding: 12px 14px 10px;
   border-bottom: 1px solid var(--border-soft);
 }
+.sidebar-header-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .root-name {
+  flex: 1;
   font-weight: 600;
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   letter-spacing: -0.005em;
+}
+.sidebar-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.sidebar-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.sidebar-quick-btn:hover {
+  background: var(--bg-elev2);
+  color: var(--accent);
+}
+.sidebar-quick-btn:active { background: var(--bg-elev3); }
+
+/* Empty folder placeholder inside the tree. */
+.tree-empty-folder {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 2px 8px 4px;
+  user-select: none;
+  opacity: .55;
 }
 .progress-row {
   display: flex;

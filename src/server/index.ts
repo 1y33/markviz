@@ -87,14 +87,15 @@ async function buildTree(root: string, current: string): Promise<TreeNode[]> {
       if (IGNORED_DIRS.has(entry.name)) continue;
       const childPath = path.join(current, entry.name);
       const children = await buildTree(root, childPath);
-      if (children.length > 0) {
-        nodes.push({
-          name: entry.name,
-          path: path.relative(root, childPath),
-          type: "dir",
-          children,
-        });
-      }
+      // Include all non-ignored directories, even empty ones — the user
+      // needs to see folders they created via mkdir or the sidebar even
+      // before they drop files into them.
+      nodes.push({
+        name: entry.name,
+        path: path.relative(root, childPath),
+        type: "dir",
+        children,
+      });
     } else if (entry.isFile()) {
       const kind = classify(entry.name);
       if (kind === "binary") continue;

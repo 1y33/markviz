@@ -868,6 +868,51 @@ A:
   const isMarkdown = currentKind === "markdown";
   const canEdit = !!currentPath && (currentKind === "markdown" || currentKind === "text");
   const showMinimap = minimapOpen && isMarkdown && focus !== "zen";
+
+  // Prompt-based file/folder creation reusable for sidebar buttons, sidebar
+  // root context menu, and (later) any other entry point that needs the same UX.
+  const promptCreateFile = useCallback((dir: string) => {
+    setFsPrompt({
+      title: "New file",
+      hint: `Inside ${dir || "the root"}. .md is added if missing.`,
+      initial: "",
+      confirmLabel: "Create",
+      onConfirm: async (val) => {
+        let name = val.trim();
+        if (!name) throw new Error("Type a filename.");
+        if (!/\.[a-z0-9]+$/i.test(name)) name += ".md";
+        const full = dir ? `${dir}/${name}` : name;
+        await saveFile(full, `# ${name.replace(/\.[^/.]+$/, "")}\n\n`);
+        await reloadTree();
+        setCurrentPath(full);
+        setEditing(true);
+      },
+    });
+  }, [reloadTree]);
+
+  const promptCreateFolder = useCallback((dir: string) => {
+    setFsPrompt({
+      title: "New folder",
+      hint: dir ? `Inside ${dir}.` : "At the root of the project.",
+      initial: "",
+      confirmLabel: "Create",
+      onConfirm: async (val) => {
+        if (!val.trim()) throw new Error("Type a name.");
+        const safe = val.trim().replace(/[^a-zA-Z0-9._ -]/g, "");
+        if (!safe) throw new Error("Invalid name.");
+        const full = dir ? `${dir}/${safe}` : safe;
+        await makeDir(full);
+        await reloadTree();
+      },
+    });
+  }, [reloadTree]);
+
+  // A "root" context menu — shown when right-clicking on empty space in the
+  // tree. Uses a synthetic TreeNode representing the project root.
+  const openRootContextMenu = useCallback((x: number, y: number) => {
+    const rootNode: TreeNode = { name: "(root)", path: "", type: "dir", children: [] };
+    setCtxMenu({ node: rootNode, x, y });
+  }, []);
   const showSidebar = (sidebarOpen && focus !== "zen") || (focus === "zen" && zenSidebarPeek);
   const sidebarIsOverlay = focus === "zen" && zenSidebarPeek;
 
@@ -909,6 +954,9 @@ A:
           onContextMenu={(node, x, y) => setCtxMenu({ node, x, y })}
           pinnedPaths={pinnedPaths}
           onTogglePin={togglePin}
+          onCreateFileAtRoot={() => promptCreateFile("")}
+          onCreateFolderAtRoot={() => promptCreateFolder("")}
+          onRootContextMenu={openRootContextMenu}
           onMove={async (source, destDir) => {
             const filename = source.split("/").pop() ?? source;
             const target = destDir ? `${destDir}/${filename}` : filename;
@@ -1315,6 +1363,9 @@ A:
       {ctxMenu && (() => {
         const node = ctxMenu.node;
         const isFile = node.type === "file";
+        // The synthetic "root" node has an empty path. It shouldn't offer
+        // rename / delete / pin actions — only "create" affordances.
+        const isRoot = node.type === "dir" && node.path === "";
         const dir = node.path.includes("/") ? node.path.slice(0, node.path.lastIndexOf("/")) : "";
         const actions: ContextAction[] = [];
         if (isFile) {
@@ -1330,43 +1381,21 @@ A:
             onPick: () => togglePin(node.path),
           });
         } else {
-          actions.push({
-            id: "new-file-here",
-            label: "New file here…",
-            onPick: () => setFsPrompt({
-              title: "New file",
-              hint: `Inside ${node.path || "/"}. .md is added if missing.`,
-              initial: "",
-              confirmLabel: "Create",
-              onConfirm: async (val) => {
-                let name = val.trim();
-                if (!name) throw new Error("Type a filename.");
-                if (!/\.[a-z0-9]+$/i.test(name)) name += ".md";
-                const full = node.path ? `${node.path}/${name}` : name;
-                await saveFile(full, `# ${name.replace(/\.[^/.]+$/, "")}\n\n`);
-                await reloadTree();
-                setCurrentPath(full);
-                setEditing(true);
-              },
-            }),
-          });
-          actions.push({
-            id: "new-folder-here",
-            label: "New folder…",
-            onPick: () => setFsPrompt({
-              title: "New folder",
-              initial: "",
-              confirmLabel: "Create",
-              onConfirm: async (val) => {
-                if (!val.trim()) throw new Error("Type a name.");
-                const safe = val.trim().replace(/[^a-zA-Z0-9._ -]/g, "");
-                if (!safe) throw new Error("Invalid name.");
-                const full = node.path ? `${node.path}/${safe}` : safe;
-                await makeDir(full);
-                await reloadTree();
-              },
-            }),
-          });
+          // Folder (or root) — show create-inside actions.
+          actions.push({ id: "new-file-here", label: "New file here…", onPick: () => promptCreateFile(node.path) });
+          actions.push({ id: "new-folder-here", label: "New folder…", onPick: () => promptCreateFolder(node.path) });
+        }
+        if (isRoot) {
+          // Root menu stops here — no rename/move/delete.
+          return (
+            <ContextMenu
+              x={ctxMenu.x}
+              y={ctxMenu.y}
+              actions={actions}
+              target={node}
+              onClose={() => setCtxMenu(null)}
+            />
+          );
         }
         actions.push({ id: "sep1", label: "", separator: true, onPick: () => {} });
         actions.push({

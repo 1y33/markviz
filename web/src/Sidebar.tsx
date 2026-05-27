@@ -32,6 +32,11 @@ interface Props {
   // Pinned paths shown in a separate top section.
   pinnedPaths?: string[];
   onTogglePin?: (path: string) => void;
+  // Quick-create actions in the sidebar header.
+  onCreateFileAtRoot?: () => void;
+  onCreateFolderAtRoot?: () => void;
+  // Right-click on empty space below the tree triggers the root context menu.
+  onRootContextMenu?: (x: number, y: number) => void;
 }
 
 interface TreeViewProps {
@@ -258,7 +263,7 @@ function TreeView({
                 </button>
               )}
             </div>
-            {n.type === "dir" && isOpen && n.children && (
+            {n.type === "dir" && isOpen && n.children && n.children.length > 0 && (
               <TreeView
                 nodes={n.children}
                 depth={depth + 1}
@@ -275,6 +280,14 @@ function TreeView({
                 dragState={dragState}
                 setDragState={setDragState}
               />
+            )}
+            {n.type === "dir" && isOpen && (!n.children || n.children.length === 0) && (
+              <div
+                className="tree-empty-folder"
+                style={{ paddingLeft: (depth + 1) * 12 + 8 }}
+              >
+                empty
+              </div>
             )}
           </li>
         );
@@ -297,6 +310,9 @@ export function Sidebar(props: Props) {
     onMove,
     pinnedPaths,
     onTogglePin,
+    onCreateFileAtRoot,
+    onCreateFolderAtRoot,
+    onRootContextMenu,
   } = props;
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -444,8 +460,39 @@ export function Sidebar(props: Props) {
         className={`sidebar-header ${dragState.hoverDir === "" ? "is-drop-target" : ""} ${dragState.flashDir === "__root__" ? "is-drop-flash" : ""}`}
         {...rootDropHandlers}
       >
-        <div className="root-name" title={rootName}>
-          {rootName}
+        <div className="sidebar-header-top">
+          <div className="root-name" title={rootName}>
+            {rootName}
+          </div>
+          <div className="sidebar-quick-actions">
+            {onCreateFileAtRoot && (
+              <button
+                className="sidebar-quick-btn"
+                onClick={onCreateFileAtRoot}
+                title="New file at root (n)"
+                aria-label="New file at root"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                  <path d="M14 2v6h6" />
+                  <path d="M12 18v-6M9 15h6" />
+                </svg>
+              </button>
+            )}
+            {onCreateFolderAtRoot && (
+              <button
+                className="sidebar-quick-btn"
+                onClick={onCreateFolderAtRoot}
+                title="New folder at root"
+                aria-label="New folder at root"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+                  <path d="M12 14v-4M10 12h4" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
         <div className="progress-row">
           <div className="progress-bar"><div className="progress-fill" style={{ width: `${progress}%` }} /></div>
@@ -509,9 +556,22 @@ export function Sidebar(props: Props) {
           </ul>
         </div>
       )}
-      <div className="tree-scroll" ref={scrollRef}>
+      <div
+        className="tree-scroll"
+        ref={scrollRef}
+        onContextMenu={(e) => {
+          // Only fire when right-clicking on empty space, not on a tree row
+          // (rows have their own onContextMenu that calls preventDefault first).
+          if (e.defaultPrevented) return;
+          if (!onRootContextMenu) return;
+          e.preventDefault();
+          onRootContextMenu(e.clientX, e.clientY);
+        }}
+      >
         {filtered.length === 0 ? (
-          <div className="empty">No files found</div>
+          <div className="empty">
+            {query ? "No files match." : "No files yet. Use the + buttons above or right-click here."}
+          </div>
         ) : (
           <TreeView
             nodes={filtered}
